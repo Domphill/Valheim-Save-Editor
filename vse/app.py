@@ -215,6 +215,7 @@ class App:
         self.ed_stack = self._small_entry(edit, "Stack:", "")
         self.ed_quality = self._small_entry(edit, "Quality:", "")
         self.ed_dur = self._small_entry(edit, "Durability:", "")
+        ttk.Button(edit, text="Max", width=5, command=self._fill_edit_durability).pack(side="left", padx=(0, 8))
         ttk.Button(edit, text="Apply to selected", command=self.apply_selected).pack(side="left")
         ttk.Button(edit, text="Unmark", command=self.unmark_selected).pack(side="left", padx=(12, 0))
         ttk.Button(edit, text="Remove item", command=self.remove_selected).pack(side="left", padx=(4, 0))
@@ -232,8 +233,12 @@ class App:
         srow.pack(fill="x")
         ttk.Label(srow, text="Search:").pack(side="left")
         self.add_query = tk.StringVar()
-        self.add_entry = ttk.Entry(srow, textvariable=self.add_query, width=36)
-        self.add_entry.pack(side="left", padx=(4, 0))
+        self.add_entry = ttk.Entry(srow, textvariable=self.add_query, width=24)
+        self.add_entry.pack(side="left", padx=(4, 6))
+        self.add_cat = ttk.Combobox(srow, state="readonly", width=11, values=[t for _, t in search.CATEGORIES])
+        self.add_cat.current(0)
+        self.add_cat.pack(side="left")
+        self.add_cat.bind("<<ComboboxSelected>>", lambda e: self._refilter())
         self.add_entry.bind("<KeyRelease>", lambda e: self._refilter())
         self.add_entry.bind("<Down>", self._focus_results)
         self.add_entry.bind("<Return>", lambda e: self.add_item())
@@ -253,6 +258,7 @@ class App:
         row.pack(anchor="w", pady=(4, 0))
         self.add_stack = self._small_entry(row, "Stack:", "1")
         self.add_quality = self._small_entry(row, "Quality:", "1")
+        self.add_quality.bind("<KeyRelease>", lambda e: self._fill_add_durability())
         self.add_dur = self._small_entry(row, "Durability:", "100")
         row2 = ttk.Frame(right)
         row2.pack(anchor="w", pady=(4, 0))
@@ -260,9 +266,10 @@ class App:
         self.add_crafted_chk = ttk.Checkbutton(row2, text="Crafted by this character", variable=self.add_crafted)
         self.add_crafted_chk.pack(side="left")
         ttk.Button(row2, text="Add", style="Accent.TButton", command=self.add_item).pack(side="left", padx=(12, 0))
-        hint = ("In-game names work (iron sword, scrap iron, core wood, megingjord), in any word order. "
-                "Durability 100 is right for food, arrows and materials; for gear enter that item's real "
-                "maximum. Untick 'Crafted by' for raw materials, which never show a crafter.")
+        hint = ("Names, stack limits and durability come from the game files. Type an in-game name in any "
+                "word order (iron sword, scrap iron, corewood, megingjord). Durability fills in with the "
+                "item's maximum for the chosen quality. Untick 'Crafted by' for raw materials, which never "
+                "show a crafter.")
         ttk.Label(right, text=hint, style="Hint.TLabel", wraplength="330p", justify="left").pack(anchor="w", pady=(6, 0))
         self._refilter()
 
@@ -637,7 +644,7 @@ class App:
             return
         prefab = core.item_name(it)
         d["item"].set(search.label(prefab))
-        d["prefab"].set(prefab)
+        d["prefab"].set("%s, %s" % (prefab, search.type_name(prefab)) if search.info(prefab) else prefab)
         d["stack"].set(str(it.stack))
         d["quality"].set(str(it.quality))
         d["dur"].set("%.1f" % it.durability_value)
@@ -670,12 +677,33 @@ class App:
         return self.by_slot[self.selected]
 
     def _stack_ok(self, name, stack):
-        """Soft warning for stacks the game cannot hold in one slot."""
-        if stack <= 100 or name == "Coins":
+        """Soft warning for unknown items only; known items are limited by the game's own numbers."""
+        if search.max_stack(name) is not None or stack <= 100:
             return True
-        return messagebox.askyesno("Large stack", "Nothing except coins stacks above 100 in Valheim, and "
-                                   "most materials stop at 50 or 30. The game may not show %d in one "
-                                   "slot.\n\nContinue anyway?" % stack)
+        return messagebox.askyesno("Large stack", "The game's stack limit for this item is not known and "
+                                   "nothing except coins stacks above 100 in Valheim. The game may not "
+                                   "show %d in one slot.\n\nContinue anyway?" % stack)
+
+    def _fill_edit_durability(self):
+        it = self.by_slot.get(self.selected) if self.selected else None
+        if it is None:
+            return
+        try:
+            q = int(self.ed_quality.get().strip() or it.quality)
+        except ValueError:
+            q = it.quality
+        self.ed_dur.delete(0, "end")
+        self.ed_dur.insert(0, self._fmt(core.default_durability(core.item_name(it), q)))
+
+    def _fill_add_durability(self):
+        if not self.add_selected:
+            return
+        try:
+            q = int(self.add_quality.get().strip() or 1)
+        except ValueError:
+            q = 1
+        self.add_dur.delete(0, "end")
+        self.add_dur.insert(0, self._fmt(core.default_durability(self.add_selected, q)))
 
     def _typing(self):
         w = self.root.focus_get()
@@ -761,7 +789,8 @@ class App:
         self.status.set("Removed %d mark(s). Save to write the file." % n)
 
     def _refilter(self):
-        names = search.search(self.add_query.get(), self.all_items, limit=200)
+        cat = search.CATEGORIES[self.add_cat.current()][0] if self.add_cat.current() >= 0 else "all"
+        names = search.search(self.add_query.get(), self.all_items, limit=200, category=cat)
         self._results_names = names
         self.results.delete(0, "end")
         for n in names:
@@ -776,7 +805,13 @@ class App:
     def _set_add_selected(self, name):
         self.add_selected = name
         if name:
-            self.add_selected_var.set("Selected: %s   [%s]" % (search.label(name), name))
+            parts = ["Selected: %s   [%s]" % (search.label(name), name)]
+            if search.info(name):
+                parts.append("%s · stacks to %d · quality up to %d · durability %g"
+                             % (search.type_name(name), search.max_stack(name), search.max_quality(name),
+                                search.max_durability(name, 1)))
+            self.add_selected_var.set("\n".join(parts))
+            self._fill_add_durability()
         elif self._results_names:
             self.add_selected_var.set("%d matches. Pick one from the list." % len(self._results_names))
         else:

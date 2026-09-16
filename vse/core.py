@@ -5,7 +5,7 @@ import os
 import shutil
 import sys
 
-from . import fch
+from . import fch, search
 from . import items as itemdb
 
 
@@ -212,25 +212,43 @@ def resolve_item(text):
     try:
         h = int(t)
     except ValueError:
+        hit = search.resolve(t)   # in-game name, any word order, if it is unambiguous
+        if hit:
+            return hit, itemdb.ITEM_NAME_TO_HASH[hit]
         raise ValueError("Unknown item name: %r" % t)
     if h not in itemdb.ITEM_HASH_TO_NAME:
         raise ValueError("Unknown item hash: %d" % h)
     return itemdb.ITEM_HASH_TO_NAME[h], h
 
 
-def _check_values(stack, quality, durability):
+def _check_values(prefab_name, stack, quality, durability):
     if int(stack) < 1 or int(quality) < 1:
         raise ValueError("Stack and quality must be 1 or more.")
     if float(durability) < 0:
         raise ValueError("Durability cannot be negative.")
+    ms = search.max_stack(prefab_name)
+    if ms and int(stack) > ms:
+        raise ValueError("%s stacks to %d in the game, not %d." % (search.label(prefab_name), ms, int(stack)))
+    mq = search.max_quality(prefab_name)
+    if mq and int(quality) > mq:
+        raise ValueError("%s goes up to quality %d in the game, not %d." % (search.label(prefab_name), mq, int(quality)))
 
 
-def add_item(cf, name, x, y, stack=1, quality=1, durability=100.0, crafted_by_character=True):
+def default_durability(prefab_name, quality=1):
+    """What a freshly crafted item of that quality has: the game's maximum, or 100 if unknown."""
+    md = search.max_durability(prefab_name, quality)
+    return 100.0 if md is None else md
+
+
+def add_item(cf, name, x, y, stack=1, quality=1, durability=None, crafted_by_character=True):
+    """Add an item. durability=None means the game's maximum for that quality."""
     if not cf.has_data:
         raise ValueError("This character has no player data yet (it has never entered a world), "
                          "so it has no inventory to edit.")
-    _, prefab = resolve_item(name)
-    _check_values(stack, quality, durability)
+    canonical, prefab = resolve_item(name)
+    if durability is None:
+        durability = default_durability(canonical, quality)
+    _check_values(canonical, stack, quality, durability)
     if not (0 <= x < fch.INVENTORY_W and 0 <= y < fch.INVENTORY_H):
         raise ValueError("slot out of range")
     if cf.item_at(x, y) is not None:
@@ -248,7 +266,7 @@ def update_item(it, stack=None, quality=None, durability=None):
     stack = it.stack if stack is None else int(stack)
     quality = it.quality if quality is None else int(quality)
     durability = it.durability_value if durability is None else float(durability)
-    _check_values(stack, quality, durability)
+    _check_values(item_name(it), stack, quality, durability)
     it.stack, it.quality = stack, quality
     it.durability = int(round(durability * 100))
     it.refresh_flags()

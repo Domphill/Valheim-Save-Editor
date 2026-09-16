@@ -69,8 +69,9 @@ launch. If Steam shows a cloud conflict dialog, keep the **local** file.
 3. Character tab: untick the cheat flag. Inventory tab: red tiles are marked; *Clear all
    marks*. Click an item to change its stack, quality or durability, then *Apply to
    selected*. Click an empty slot, type in the search box and pick from the list to add an
-   item. In-game names work ("iron sword", "scrap iron", "core wood", "megingjord") in any
-   word order, as do prefab names. Skills tab: type levels.
+   item. In-game names work ("iron sword", "scrap iron", "corewood", "megingjord") in any
+   word order, as do prefab names, and the dropdown next to the search box narrows the list
+   to a category. Skills tab: type levels.
 4. *Save*. A dialog lists exactly what will change before anything is written. Launch the
    game and check the item tooltips and the achievements screen.
 
@@ -113,13 +114,12 @@ from the `worlds` command.
 - A **world** that had cheats used in it stays flagged. A clean character entering a
   flagged world is not flagged by it.
 - Durability is stored as a number the game shows divided by 100. The tool shows the
-  game's number. For food, arrows and materials 100 is correct; for gear enter that
-  item's real maximum or it will show as damaged.
-- Stack limits are not enforced beyond a warning above 100. Keep arrows at 100 or below,
-  most materials at 50 or 30 (ore and metal), food at 20.
-- The **in-game names** used for searching and labelling come from a hand-written table
-  covering the common items up to Mistlands. The prefab name is always what gets written.
-  If a name is wrong or missing, open an issue or a pull request against `vse/search.py`.
+  game's number and fills in the item's maximum for the chosen quality when you add gear.
+- Stack sizes and quality levels are limited to what the game allows for that item.
+- Item names, types, stack limits and durability values are read from the game's own files
+  by `tools/generate_itemdata.py` and shipped as `vse/itemdata.py`. After a game update
+  that adds items, rerun the generator (needs `pip install UnityPy` and an installed copy
+  of the game) and open a pull request with the new table.
 
 Verified with Valheim 1.0 (character profile version 46, player data version 33). The
 tool refuses any other version rather than guess.

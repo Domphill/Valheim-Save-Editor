@@ -163,9 +163,9 @@ class FileTests(unittest.TestCase):
             core.resolve_item("")
         it = core.add_item(cf, "arrowiron", 5, 3, stack=100)
         self.assertEqual(core.item_name(it), "ArrowIron")
-        core.update_item(it, stack=40, quality=2, durability=75.5)
+        core.update_item(it, stack=40, quality=1, durability=75.5)
         back = fch.Item.parse(fch.Reader(it.to_bytes()))
-        self.assertEqual((back.stack, back.quality, back.durability, back.crafter_name), (40, 2, 7550, "Tester"))
+        self.assertEqual((back.stack, back.quality, back.durability, back.crafter_name), (40, 1, 7550, "Tester"))
         with self.assertRaises(ValueError):
             core.update_item(it, stack=0)
         equipped = fch.Item.parse(fch.Reader(bytes.fromhex("102700000202006b50003e02e78c0000000003446f6d29eeb08d00")))

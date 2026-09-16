@@ -92,8 +92,8 @@ def cmd_add(a):
     cf = _load(a.file)
     x, y = (int(v) for v in a.slot.split(","))
     it = core.add_item(cf, a.item, x, y, a.stack, a.quality, a.durability, crafted_by_character=not a.no_crafter)
-    print("added %s x%d at %d,%d%s" % (core.item_name(it), it.stack, x, y,
-                                        "" if a.no_crafter else " crafted by %s" % cf.name))
+    print("added %s x%d q%d durability %g at %d,%d%s" % (core.item_name(it), it.stack, it.quality, it.durability_value,
+                                                          x, y, "" if a.no_crafter else " crafted by %s" % cf.name))
     _save(cf, a.file)
     return 0
 
@@ -147,7 +147,8 @@ def main(argv=None):
     ad.add_argument("--slot", required=True, metavar="X,Y", help="0-7,0-3; row 0 is the hotbar")
     ad.add_argument("--stack", type=int, default=1)
     ad.add_argument("--quality", type=int, default=1)
-    ad.add_argument("--durability", type=float, default=100.0)
+    ad.add_argument("--durability", type=float, default=None,
+                    help="game value; default is the item's maximum for that quality")
     ad.add_argument("--no-crafter", action="store_true", help="no 'Crafted by' line (raw materials)")
     ad.set_defaults(fn=cmd_add)
     w = sub.add_parser("worlds", help="list the worlds this character has data for")
