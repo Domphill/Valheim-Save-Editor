@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+build/
+dist/
+*.spec
+*.fch
+*.bak
+*.vse-tmp
+backups/
+.venv/
