@@ -4,6 +4,8 @@
     python -m vse clear <file.fch> [--flag] [--marks]          (default: both)
     python -m vse skill <file.fch> Swords=55 Run=40 ...
     python -m vse add   <file.fch> --slot X,Y Item [--stack N] [--quality N] [--durability F] [--no-crafter]
+    python -m vse worlds <file.fch>
+    python -m vse forget <file.fch> WORLD_ID [--map-only | --death-only]
 
 Every write goes through the same backup/verify/replace pipeline as the GUI.
 """
@@ -96,6 +98,34 @@ def cmd_add(a):
     return 0
 
 
+def cmd_worlds(a):
+    cf = _load(a.file)
+    names = core.world_names()
+    print("Worlds with data on %s (%d):" % (cf.name, len(cf.worlds)))
+    for w in cf.worlds:
+        pos = "%.0f, %.0f" % (w.logout_xyz[0], w.logout_xyz[2]) if w.have_logout else "-"
+        death = "%.0f, %.0f" % (w.death_xyz[0], w.death_xyz[2]) if w.have_death else "-"
+        print("   %-28s id=%-14d bed=%-3s logout=%-14s death=%-14s map=%d KB"
+              % (core.world_label(w.uid, names), w.uid, "yes" if w.have_spawn else "no", pos, death, w.map_size // 1024))
+    return 0
+
+
+def cmd_forget(a):
+    cf = _load(a.file)
+    label = core.world_label(a.uid)
+    if a.map_only:
+        core.clear_world_map(cf, a.uid)
+        print("cleared map for %s" % label)
+    elif a.death_only:
+        core.clear_death_marker(cf, a.uid)
+        print("cleared death marker for %s" % label)
+    else:
+        core.forget_world(cf, a.uid)
+        print("forgot %s" % label)
+    _save(cf, a.file)
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m vse", description="Valheim Save Editor %s" % __version__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -120,6 +150,15 @@ def main(argv=None):
     ad.add_argument("--durability", type=float, default=100.0)
     ad.add_argument("--no-crafter", action="store_true", help="no 'Crafted by' line (raw materials)")
     ad.set_defaults(fn=cmd_add)
+    w = sub.add_parser("worlds", help="list the worlds this character has data for")
+    w.add_argument("file")
+    w.set_defaults(fn=cmd_worlds)
+    fg = sub.add_parser("forget", help="forget a world (or only its map / death marker)")
+    fg.add_argument("file")
+    fg.add_argument("uid", type=int, help="world ID from the 'worlds' command")
+    fg.add_argument("--map-only", action="store_true", help="clear only the explored map")
+    fg.add_argument("--death-only", action="store_true", help="clear only the death marker")
+    fg.set_defaults(fn=cmd_forget)
     a = p.parse_args(argv)
     try:
         return a.fn(a)

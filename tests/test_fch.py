@@ -15,7 +15,20 @@ from vse import core, fch  # noqa: E402
 from vse import items as itemdb  # noqa: E402
 
 
-def build_synthetic(name="Tester", player_id=1234567890, used_cheats=0, items=(), skills=(), has_data=True):
+def make_world(uid, map_bytes=b"", death=False, logout=(10.0, 30.0, -20.0)):
+    w = fch.WorldEntry()
+    w.uid = uid
+    w.have_logout = 1
+    w.logout = struct.pack("<fff", *logout)
+    if death:
+        w.have_death = 1
+        w.death = struct.pack("<fff", 1.0, 2.0, 3.0)
+    w.map_data = map_bytes or None
+    return w
+
+
+def build_synthetic(name="Tester", player_id=1234567890, used_cheats=0, items=(), skills=(), has_data=True,
+                    worlds=()):
     """Build a minimal but structurally complete 1.0 profile the parser accepts."""
     def i32(v): return struct.pack("<i", v)
     def f32(v): return struct.pack("<f", v)
@@ -23,7 +36,7 @@ def build_synthetic(name="Tester", player_id=1234567890, used_cheats=0, items=()
     fdict0 = i32(0)
     bucket = b"\0" * (4 * fch.STATS_COUNT) + fdict0 * 3 + i32(0) + fdict0 * 5
     body = i32(fch.PROFILE_VERSION) + i32(fch.STATS_COUNT) + i32(1) + bucket
-    body += b"\x01" + i32(0)  # first_spawn, no worlds
+    body += b"\x01" + i32(len(worlds)) + b"".join(w.to_bytes() for w in worlds)  # first_spawn, worlds
     body += fch.write_str(name) + i64(player_id) + fch.write_str("")
     body += bytes([used_cheats]) + i64(1700000000) + (b"\x01" if has_data else b"\x00")
     if has_data:
@@ -218,6 +231,50 @@ class FileTests(unittest.TestCase):
                 self.assertEqual(f.read(), self.data)
             self.assertEqual(fch.CharacterFile.load(path).used_cheats, 0)
             self.assertEqual(core.list_backups(path, os.path.join(d, "backups")), [backup])
+
+
+class WorldTests(unittest.TestCase):
+    def setUp(self):
+        self.worlds = [make_world(111, map_bytes=bytes(range(256)) * 8, death=True),
+                       make_world(222)]
+        self.data = build_synthetic(worlds=self.worlds, items=[fch.Item.new(1, 0, 0)], skills=[fch.Skill(1, 5, 0)])
+
+    def test_parse_and_roundtrip(self):
+        cf = fch.CharacterFile(self.data)
+        self.assertEqual(cf.world_count, 2)
+        self.assertTrue(cf.editable)
+        w = cf.world(111)
+        self.assertEqual(w.map_size, 2048)
+        self.assertTrue(w.have_death)
+        self.assertEqual(w.logout_xyz, (10.0, 30.0, -20.0))
+        self.assertIsNone(cf.world(222).map_data)
+        self.assertEqual(cf.to_bytes(), self.data)
+
+    def test_forget_clear_and_describe(self):
+        cf = fch.CharacterFile(self.data)
+        core.clear_death_marker(cf, 111)
+        core.clear_world_map(cf, 111)
+        core.forget_world(cf, 222)
+        lines = core.describe_changes(cf)
+        self.assertTrue(any("ID 111" in l and "map cleared" in l and "death marker cleared" in l for l in lines), lines)
+        self.assertTrue(any(l.startswith("- world") and "ID 222" in l for l in lines), lines)
+        out = cf.to_bytes()
+        cf2 = fch.CharacterFile(out)
+        self.assertEqual(cf2.world_count, 1)
+        self.assertFalse(cf2.world(111).have_death)
+        self.assertIsNone(cf2.world(111).map_data)
+        self.assertEqual(cf2.world(111).logout_xyz, (10.0, 30.0, -20.0), "position must survive a map clear")
+        with self.assertRaises(ValueError):
+            core.forget_world(cf2, 999)
+
+    def test_world_header(self):
+        pkg = (struct.pack("<i", 41) + fch.write_str("MyWorld") + fch.write_str("abcSEED123")
+               + struct.pack("<i", 77) + struct.pack("<q", 5227202803) + struct.pack("<i", 2) + b"\x01")
+        data = struct.pack("<i", len(pkg)) + pkg + b"trailing"
+        self.assertEqual(fch.read_world_header(data), ("MyWorld", "abcSEED123", 5227202803))
+        self.assertIsNone(fch.read_world_header(b"\x00\x00"))
+        self.assertEqual(core.world_label(5227202803, {5227202803: "MyWorld"}), "MyWorld")
+        self.assertEqual(core.world_label(42, {}), "Unknown world (ID 42)")
 
 
 class RealFileTest(unittest.TestCase):

@@ -63,6 +63,46 @@ def find_characters(include_auto_backups=False):
     return out
 
 
+def world_dirs():
+    """Existing directories that hold world saves."""
+    found = []
+    if sys.platform == "win32":
+        base = os.path.join(os.environ.get("USERPROFILE", os.path.expanduser("~")),
+                            "AppData", "LocalLow", "IronGate", "Valheim")
+        steam_globs = []
+        root = _steam_root()
+        if root:
+            steam_globs.append(os.path.join(root, "userdata", "*", VALHEIM_APPID, "remote", "worlds"))
+    else:
+        base = os.path.join(os.path.expanduser("~"), ".config", "unity3d", "IronGate", "Valheim")
+        steam_globs = [
+            os.path.join(os.path.expanduser("~"), ".steam", "steam", "userdata", "*", VALHEIM_APPID, "remote", "worlds"),
+            os.path.join(os.path.expanduser("~"), ".local", "share", "Steam", "userdata", "*", VALHEIM_APPID, "remote", "worlds"),
+        ]
+    for sub in ("worlds", "worlds_local"):
+        d = os.path.join(base, sub)
+        if os.path.isdir(d):
+            found.append(d)
+    for pattern in steam_globs:
+        found.extend(d for d in sorted(glob.glob(pattern)) if os.path.isdir(d))
+    return found
+
+
+def world_files():
+    """Header files of every world save found: 1.0 folders holding _main.N.fwl2, or legacy .fwl files."""
+    out = []
+    for d in world_dirs():
+        for name in sorted(os.listdir(d)):
+            p = os.path.join(d, name)
+            if os.path.isdir(p):
+                heads = glob.glob(os.path.join(p, "_main.*.fwl2"))
+                if heads:
+                    out.append(max(heads, key=lambda h: int(h.rsplit(".", 2)[-2]) if h.rsplit(".", 2)[-2].isdigit() else -1))
+            elif name.lower().endswith(".fwl"):
+                out.append(p)
+    return out
+
+
 def app_dir():
     """Folder for backups, the save history and the error log."""
     if sys.platform == "win32":

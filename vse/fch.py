@@ -230,6 +230,82 @@ class Item:
         return it
 
 
+class WorldEntry:
+    """The character's per-world data: bed spawn, logout point, death marker, home, explored map."""
+
+    __slots__ = ("uid", "have_spawn", "spawn", "have_logout", "logout", "have_death", "death", "home", "map_data")
+    ZERO = b"\0" * 12
+
+    def __init__(self):
+        self.uid = 0
+        self.have_spawn = self.have_logout = self.have_death = 0
+        self.spawn = self.logout = self.death = self.home = self.ZERO
+        self.map_data = None
+
+    @classmethod
+    def parse(cls, r):
+        w = cls()
+        w.uid = r.i64()
+        w.have_spawn = r.byte()
+        w.spawn = r.raw(12)
+        w.have_logout = r.byte()
+        w.logout = r.raw(12)
+        w.have_death = r.byte()
+        w.death = r.raw(12)
+        w.home = r.raw(12)
+        if r.byte():
+            w.map_data = r.raw(r.i32())
+        return w
+
+    def to_bytes(self):
+        b = (struct.pack("<q", self.uid) + bytes([self.have_spawn]) + self.spawn
+             + bytes([self.have_logout]) + self.logout + bytes([self.have_death]) + self.death + self.home)
+        if self.map_data is not None:
+            b += b"\x01" + struct.pack("<i", len(self.map_data)) + self.map_data
+        else:
+            b += b"\x00"
+        return b
+
+    @staticmethod
+    def _xyz(v):
+        return struct.unpack("<fff", v)
+
+    @property
+    def logout_xyz(self):
+        return self._xyz(self.logout)
+
+    @property
+    def death_xyz(self):
+        return self._xyz(self.death)
+
+    @property
+    def spawn_xyz(self):
+        return self._xyz(self.spawn)
+
+    @property
+    def map_size(self):
+        return len(self.map_data) if self.map_data else 0
+
+
+def read_world_header(data):
+    """(name, seed name, uid) from the start of a .fwl or .fwl2 world file, or None."""
+    if len(data) < 8:
+        return None
+    n = struct.unpack_from("<i", data, 0)[0]
+    if n <= 0 or 4 + n > len(data):
+        return None
+    r = Reader(data[4:4 + n])
+    try:
+        r.i32()  # file version
+        name = r.string()
+        seed_name = r.string()
+        r.i32()  # seed
+        uid = r.i64()
+    except FchError:
+        return None
+    return name, seed_name, uid
+
+
 class Skill:
     __slots__ = ("type", "level", "acc")
 
@@ -253,6 +329,7 @@ class CharacterFile:
         self.original = bytes(data)
         self.items = []
         self.skills = []
+        self.worlds = []
         self.has_data = False
         self.max_health = self.health = self.max_stamina = 0.0
         self.guardian_power = ""
@@ -308,15 +385,12 @@ class CharacterFile:
             for _ in range(5):
                 r.float_dict()
         self.first_spawn = r.byte()
-        self.world_count = r.i32()
-        for _ in range(self.world_count):
-            r.i64()
-            r.byte(); r.raw(12)
-            r.byte(); r.raw(12)
-            r.byte(); r.raw(12)
-            r.raw(12)
-            if r.byte():
-                r.raw(r.i32())
+        worlds_off = r.o
+        n_worlds = r.i32()
+        if not (0 <= n_worlds <= 10000):
+            raise FchError("unreasonable world count %d" % n_worlds)
+        self.worlds = [WorldEntry.parse(r) for _ in range(n_worlds)]
+        post_off = r.o
         self.name = r.string()
         self.player_id = r.i64()
         self.seed = r.string()
@@ -324,7 +398,8 @@ class CharacterFile:
         self.used_cheats = r.byte()
         self.date_raw = r.i64()
         has_data = r.byte()
-        self._head = body[:flag_off]
+        self._pre_worlds = body[:worlds_off]
+        self._post_worlds = body[post_off:flag_off]
         self._mid = body[flag_off + 1:r.o]
         if has_data:
             self.has_data = True
@@ -384,8 +459,20 @@ class CharacterFile:
 
     # -- writing ---------------------------------------------------------
 
+    @property
+    def world_count(self):
+        return len(self.worlds)
+
+    def world(self, uid):
+        for w in self.worlds:
+            if w.uid == uid:
+                return w
+        return None
+
     def build_body(self):
-        body = self._head + bytes([self.used_cheats & 0xFF]) + self._mid
+        body = (self._pre_worlds + struct.pack("<i", len(self.worlds))
+                + b"".join(w.to_bytes() for w in self.worlds)
+                + self._post_worlds + bytes([self.used_cheats & 0xFF]) + self._mid)
         if self.has_data:
             blob = (self._blob_pre
                     + struct.pack("<H", len(self.items))

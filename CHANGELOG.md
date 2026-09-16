@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.0 – 2026-09-16
+
+- Worlds tab: lists every world the character has data for, with the world name where the
+  save is on this PC, the logout position, bed spawn, death marker and explored-map size.
+  *Forget world* removes the character's block for a world (next login starts at the start
+  stone with a fresh map), *Clear map* wipes exploration only, *Clear death marker* removes
+  the skull. All three go through the usual review, backup and undo.
+- CLI: `worlds` and `forget` commands.
+
 ## 0.3.0 – 2026-09-16
 
 First public release.

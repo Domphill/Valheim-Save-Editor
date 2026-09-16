@@ -14,6 +14,8 @@ What it edits:
   character's name as the crafter, the same as gear you crafted yourself, or no crafter at
   all, the same as raw materials.
 - **Skills**: level of every skill, add or remove skills.
+- **Worlds**: the per-world data the character carries. Forget a world (fresh map and start
+  position on the next login there), clear only the explored map, or clear the death marker.
 
 What it does not touch: worlds, other players, servers, anything while the game is running.
 Steam version only; the Xbox/Game Pass build stores characters in a container this tool
@@ -82,6 +84,8 @@ reporting a problem.
 
 ![Skills tab](docs/skills.png)
 
+![Worlds tab](docs/worlds.png)
+
 ## Command line
 
 For machines without a desktop, or for scripting. Same backup and verification as the GUI.
@@ -91,8 +95,11 @@ For machines without a desktop, or for scripting. Same backup and verification a
     python -m vse skill Character.fch Swords=55 Run=40
     python -m vse add   Character.fch ArrowIron --slot 7,1 --stack 100
     python -m vse add   Character.fch IronScrap --slot 6,1 --stack 30 --no-crafter
+    python -m vse worlds Character.fch
+    python -m vse forget Character.fch 5227202803 [--map-only | --death-only]
 
-Slots are `column,row`, columns 0 to 7, rows 0 to 3, row 0 being the hotbar.
+Slots are `column,row`, columns 0 to 7, rows 0 to 3, row 0 being the hotbar. World IDs come
+from the `worlds` command.
 
 ## Things to know
 

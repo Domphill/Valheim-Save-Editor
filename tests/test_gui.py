@@ -15,7 +15,7 @@ try:
 except Exception:  # no display, or tkinter missing
     HAVE_TK = False
 
-from test_fch import build_synthetic  # noqa: E402
+from test_fch import build_synthetic, make_world  # noqa: E402
 from vse import fch  # noqa: E402
 from vse import items as itemdb  # noqa: E402
 
@@ -36,8 +36,9 @@ class GuiTests(unittest.TestCase):
                               crafter_id=1, crafter_name="Tester")]
         items[1].cheated = True
         self.path = os.path.join(self.tmp.name, "Tester.fch")
+        worlds = [make_world(111, map_bytes=b"\x00" * 3000, death=True), make_world(222)]
         with open(self.path, "wb") as f:
-            f.write(build_synthetic(used_cheats=1, items=items, skills=[fch.Skill(1, 40, 0)]))
+            f.write(build_synthetic(used_cheats=1, items=items, skills=[fch.Skill(1, 40, 0)], worlds=worlds))
         self.root = tk.Tk()
         self.root.withdraw()
         self.app = A.App(self.root)
@@ -149,6 +150,31 @@ class GuiTests(unittest.TestCase):
         self.assertIn("1 marked", app.check_labels["marks"].cget("text"))
         self.assertTrue(app.game_var.get().startswith("●"))
         self.assertIn("marked", app.summary_var.get())
+
+    def test_worlds_tab(self):
+        app = self.app
+        app.open_file(self.path)
+        rows = app.worlds_tree.get_children()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(app.worlds_tree.item("111")["values"][5], "2 KB")
+        app.worlds_tree.selection_set("111")
+        app.clear_death_marker()
+        self.assertFalse(app.cf.world(111).have_death)
+        app.clear_world_map()
+        self.assertIsNone(app.cf.world(111).map_data)
+        app.worlds_tree.selection_set("222")
+        app.forget_world()
+        self.assertEqual(app.cf.world_count, 1)
+        self.assertEqual(app.info_vars["worlds"].get(), "1")
+        self.assertTrue(app.dirty)
+        app.undo()
+        self.assertEqual(app.cf.world_count, 2)
+        for tab in (app.tab_worlds,):
+            app.nb.select(tab)
+            self.root.update_idletasks()
+            w, h = self.root.minsize()
+            self.assertLessEqual(self.root.winfo_reqwidth(), w)
+            self.assertLessEqual(self.root.winfo_reqheight(), h)
 
     def test_nothing_to_save_is_not_written(self):
         app = self.app

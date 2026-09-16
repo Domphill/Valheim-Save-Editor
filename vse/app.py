@@ -127,12 +127,15 @@ class App:
         self.tab_char = ttk.Frame(nb)
         self.tab_inv = ttk.Frame(nb)
         self.tab_skills = ttk.Frame(nb)
+        self.tab_worlds = ttk.Frame(nb)
         nb.add(self.tab_char, text="Character")
         nb.add(self.tab_inv, text="Inventory")
         nb.add(self.tab_skills, text="Skills")
+        nb.add(self.tab_worlds, text="Worlds")
         self._build_char()
         self._build_inv()
         self._build_skills()
+        self._build_worlds()
 
     def _build_char(self):
         f = self.tab_char
@@ -297,6 +300,91 @@ class App:
         hdr.pack(fill="x", padx=4, pady=(4, 2))
         for txt, w in (("Skill", 18), ("Level", 8), ("", 24), ("Experience", 12)):
             ttk.Label(hdr, text=txt, width=w, style="Bold.TLabel").pack(side="left", padx=4)
+
+    def _build_worlds(self):
+        f = self.tab_worlds
+        ttk.Label(f, text="Every world this character has been in keeps a block of data on the character: "
+                          "the explored map, the logout position, the bed spawn and the death marker. "
+                          "Names are matched against the world saves found on this PC; worlds hosted "
+                          "elsewhere show their ID only.",
+                  style="Hint.TLabel", wraplength="705p", justify="left").pack(anchor="w", padx=8, pady=(8, 4))
+        cols = ("world", "uid", "spawn", "logout", "death", "map")
+        self.worlds_tree = ttk.Treeview(f, columns=cols, show="headings", height=8, selectmode="browse")
+        for col, text, width, anchor in (("world", "World", 240, "w"), ("uid", "World ID", 130, "w"),
+                                          ("spawn", "Bed spawn", 90, "center"), ("logout", "Logout position", 140, "center"),
+                                          ("death", "Death marker", 140, "center"), ("map", "Explored map", 110, "center")):
+            self.worlds_tree.heading(col, text=text)
+            self.worlds_tree.column(col, width=width, anchor=anchor, stretch=(col == "world"))
+        self.worlds_tree.pack(fill="x", padx=8, pady=4)
+        btns = ttk.Frame(f)
+        btns.pack(anchor="w", padx=8, pady=4)
+        ttk.Button(btns, text="Forget world", command=self.forget_world).pack(side="left")
+        ttk.Button(btns, text="Clear map", command=self.clear_world_map).pack(side="left", padx=(6, 0))
+        ttk.Button(btns, text="Clear death marker", command=self.clear_death_marker).pack(side="left", padx=(6, 0))
+        ttk.Label(f, text="Forget world: the next login there spawns at the start stone with an unexplored map; "
+                          "inventory, skills and gear are untouched. Clear map: exploration only, position and bed "
+                          "stay. Clear death marker: removes the skull from the map. Nothing is written until "
+                          "you press Save.",
+                  style="Hint.TLabel", wraplength="705p", justify="left").pack(anchor="w", padx=8, pady=(2, 8))
+
+    def _refresh_worlds(self):
+        tree = self.worlds_tree
+        keep = tree.selection()
+        tree.delete(*tree.get_children())
+        if not self.cf:
+            return
+        names = core.world_names()
+        for w in self.cf.worlds:
+            logout = "%.0f, %.0f" % (w.logout_xyz[0], w.logout_xyz[2]) if w.have_logout else "none"
+            death = "%.0f, %.0f" % (w.death_xyz[0], w.death_xyz[2]) if w.have_death else "none"
+            size = "%d KB" % (w.map_size // 1024) if w.map_size else "none"
+            tree.insert("", "end", iid=str(w.uid), values=(core.world_label(w.uid, names), w.uid,
+                                                             "yes" if w.have_spawn else "no", logout, death, size))
+        for iid in keep:
+            if tree.exists(iid):
+                tree.selection_set(iid)
+        self.info_vars["worlds"].set(str(len(self.cf.worlds)))
+
+    def _selected_world(self):
+        if not self.cf:
+            messagebox.showerror("No file", "Open a character file first.")
+            return None
+        sel = self.worlds_tree.selection()
+        if not sel:
+            messagebox.showerror("No world", "Click a world in the list first.")
+            return None
+        return int(sel[0])
+
+    def _world_action(self, fn, verb, question):
+        uid = self._selected_world()
+        if uid is None:
+            return
+        label = core.world_label(uid)
+        if not messagebox.askyesno(verb, question % label):
+            return
+        self._push_undo()
+        try:
+            fn(self.cf, uid)
+        except ValueError as e:
+            self._undo.pop()
+            messagebox.showerror("Cannot do that", str(e))
+            return
+        self._mark_dirty()
+        self._refresh_worlds()
+        self.status.set("%s: %s. Save to write the file." % (verb, label))
+
+    def forget_world(self):
+        self._world_action(core.forget_world, "Forget world",
+                           "Forget %s?\n\nThe explored map, logout position, bed spawn and death marker for that "
+                           "world are removed from this character. The next login there starts at the start stone.")
+
+    def clear_world_map(self):
+        self._world_action(core.clear_world_map, "Clear map",
+                           "Clear the explored map for %s?\n\nPosition, bed spawn and death marker stay.")
+
+    def clear_death_marker(self):
+        self._world_action(core.clear_death_marker, "Clear death marker",
+                           "Remove the death marker for %s?")
 
     # -- game state -----------------------------------------------------------
 
@@ -464,6 +552,7 @@ class App:
         self._refresh_checks()
         self._refresh_inventory()
         self._rebuild_skill_rows()
+        self._refresh_worlds()
 
     def _refresh_checks(self):
         cf = self.cf

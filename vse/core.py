@@ -84,6 +84,26 @@ def describe_changes(cf):
     if bool(orig.used_cheats) != bool(cf.used_cheats):
         out.append("Cheat flag: %s -> %s" % ("SET" if orig.used_cheats else "clear",
                                              "SET" if cf.used_cheats else "clear"))
+    wa = {w.uid: w for w in orig.worlds}
+    wb = {w.uid: w for w in cf.worlds}
+    names = world_names()
+    for uid in list(wa) + [u for u in wb if u not in wa]:
+        label = world_label(uid, names)
+        if uid not in wb:
+            out.append("- world %s forgotten (map, position, bed spawn and death marker)" % label)
+        elif uid not in wa:
+            out.append("+ world %s" % label)
+        else:
+            a, b = wa[uid], wb[uid]
+            ch = []
+            if (a.map_data or b"") != (b.map_data or b""):
+                ch.append("map cleared" if not b.map_data else "map changed")
+            if (a.have_death, a.death) != (b.have_death, b.death):
+                ch.append("death marker cleared" if not b.have_death else "death marker changed")
+            if (a.have_logout, a.logout, a.have_spawn, a.spawn, a.home) != (b.have_logout, b.logout, b.have_spawn, b.spawn, b.home):
+                ch.append("position data changed")
+            if ch:
+                out.append("world %s: %s" % (label, ", ".join(ch)))
     if not cf.has_data:
         return out
     a = {(i.x, i.y): i for i in orig.items}
@@ -246,6 +266,57 @@ def clear_marks(cf):
             it.cheated = False
             n += 1
     return n
+
+
+# -- worlds ------------------------------------------------------------------
+
+_WORLD_NAMES = None
+
+
+def world_names(refresh=False):
+    """{world uid: world name} for every world save found on this machine."""
+    global _WORLD_NAMES
+    if _WORLD_NAMES is None or refresh:
+        from . import paths
+        names = {}
+        for p in paths.world_files():
+            try:
+                with open(p, "rb") as f:
+                    head = fch.read_world_header(f.read(4096))
+            except OSError:
+                head = None
+            if head:
+                names[head[2]] = head[0]
+        _WORLD_NAMES = names
+    return _WORLD_NAMES
+
+
+def world_label(uid, names=None):
+    names = world_names() if names is None else names
+    return names.get(uid) or "Unknown world (ID %d)" % uid
+
+
+def _need_world(cf, uid):
+    w = cf.world(int(uid))
+    if w is None:
+        raise ValueError("this character has no data for world ID %d" % int(uid))
+    return w
+
+
+def forget_world(cf, uid):
+    """Drop the character's block for that world: map, position, bed spawn and death marker."""
+    _need_world(cf, uid)
+    cf.worlds = [w for w in cf.worlds if w.uid != int(uid)]
+
+
+def clear_world_map(cf, uid):
+    _need_world(cf, uid).map_data = None
+
+
+def clear_death_marker(cf, uid):
+    w = _need_world(cf, uid)
+    w.have_death = 0
+    w.death = fch.WorldEntry.ZERO
 
 
 # -- skills ------------------------------------------------------------------
