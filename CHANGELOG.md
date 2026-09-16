@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.1 – 2026-09-16
+
+- Releases are now published automatically by CI when a version tag is pushed, with the exe
+  and a SHA-256 checksum file attached. No functional changes to the editor.
+
 ## 0.4.0 – 2026-09-16
 
 - Worlds tab: lists every world the character has data for, with the world name where the

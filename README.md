@@ -24,8 +24,9 @@ cannot open.
 ## Download
 
 - **Windows exe**: grab `ValheimSaveEditor.exe` from the
-  [Releases](https://github.com/Domphill/Valheim-Save-Editor/releases) page. It is built
-  by the CI workflow in this repository from the tagged source. Windows SmartScreen warns
+  [Releases](https://github.com/Domphill/Valheim-Save-Editor/releases) page. Every release
+  is built and published by the CI workflow in this repository from the tagged source, and
+  ships with a `.sha256` file so you can verify the download. Windows SmartScreen warns
   about any unsigned download; some antivirus products flag PyInstaller builds. If that
   bothers you, run from source instead.
 - **From source** (Windows, Linux, Steam Deck desktop mode): needs Python 3.10+ with
