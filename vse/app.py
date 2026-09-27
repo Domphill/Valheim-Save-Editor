@@ -402,35 +402,104 @@ class App:
         tree.pack(side="left", fill="both", expand=True)
         tree.tag_configure("section", font=self.bold)
         tree.tag_configure("have", foreground="#1b7f3b")
+        tree.bind("<<TreeviewSelect>>", lambda e: self._guide_selection_changed())
         self.guide_tree = tree
+        self.guide_keys = {}
+        act = ttk.Frame(f)
+        act.pack(fill="x", padx=8, pady=(4, 0))
+        ttk.Button(act, text="Add ingredients to inventory", command=self.guide_add).pack(side="left")
+        ttk.Label(act, text="×").pack(side="left", padx=(8, 2))
+        self.guide_times = ttk.Spinbox(act, from_=1, to=50, width=4)
+        self.guide_times.set(1)
+        self.guide_times.pack(side="left")
+        self.guide_sel_var = tk.StringVar(value="Click a row above to see what it needs.")
+        ttk.Label(act, textvariable=self.guide_sel_var, style="Muted.TLabel", wraplength="500p",
+                  justify="left").pack(side="left", padx=(12, 0))
         ttk.Label(f, text="Recipes, food values and station costs are read from the game files; the biome split and "
                           "the notes are written by hand. 'in bag' is in the inventory now, 'can craft' means the "
-                          "recipe is unlocked, 'seen' means the material has been picked up before.",
-                  style="Hint.TLabel", wraplength="705p", justify="left").pack(anchor="w", padx=8, pady=(0, 6))
+                          "recipe is unlocked, 'seen' means the material has been picked up before. Add ingredients "
+                          "puts one craft's worth (times the number) into the inventory as plain materials: stacks "
+                          "you already have are topped up first, then empty slots, hotbar last.",
+                  style="Hint.TLabel", wraplength="705p", justify="left").pack(anchor="w", padx=8, pady=(4, 6))
         self._refresh_guide()
 
-    def _refresh_guide(self):
+    def _refresh_guide(self, keep=None):
         tree = self.guide_tree
         tree.delete(*tree.get_children())
+        self.guide_keys = {}
         biome = guide.BIOMES[max(0, self.guide_biome.current())]
         self.guide_notes.configure(text=biome.notes)
         hide = self.guide_hide.get()
         have = total = 0
+        reselect = None
         for title, rows in guide.sections(biome, self.cf):
             if not rows:
                 continue
             parent = tree.insert("", "end", text=title, open=True, tags=("section",))
-            for label, st, detail in rows:
+            for label, st, detail, key in rows:
                 total += 1
                 done = st in ("in bag", "done")
                 have += done
                 if hide and st == "in bag":
                     continue
-                tree.insert(parent, "end", text=label, values=(st, detail), tags=("have",) if done else ())
+                iid = tree.insert(parent, "end", text=label, values=(st, detail), tags=("have",) if done else ())
+                self.guide_keys[iid] = key
+                if keep is not None and key == keep:
+                    reselect = iid
         if self.cf and self.cf.has_data:
             self.guide_progress.configure(text="%d of %d in hand" % (have, total))
         else:
             self.guide_progress.configure(text="Open a character to see what it has")
+        if reselect:
+            tree.selection_set(reselect)
+            tree.see(reselect)
+        self._guide_selection_changed()
+
+    def _guide_selected(self):
+        sel = self.guide_tree.selection()
+        return self.guide_keys.get(sel[0]) if sel else None
+
+    def _guide_selection_changed(self):
+        key = self._guide_selected()
+        if not key:
+            self.guide_sel_var.set("Click a row above to see what it needs.")
+            return
+        needs = guide.needs_for(key)
+        if not needs:
+            self.guide_sel_var.set("%s is found, not made." % guide.name_of(key))
+        else:
+            self.guide_sel_var.set("%s needs %s" % (guide.name_of(key),
+                                                     ", ".join("%d %s" % (n, guide.label(p)) for p, n in needs)))
+
+    def guide_add(self):
+        if not self.cf or not self.cf.has_data:
+            messagebox.showerror("No file", "Open a character file first.")
+            return
+        key = self._guide_selected()
+        if not key:
+            messagebox.showerror("Nothing selected", "Click an item, food, mead or station in the list first.")
+            return
+        needs = guide.needs_for(key)
+        if not needs:
+            self.status.set("%s is found, not made; nothing to add." % guide.name_of(key))
+            return
+        try:
+            times = max(1, int(self.guide_times.get() or 1))
+        except ValueError:
+            times = 1
+        self._push_undo()
+        try:
+            added, topped = core.give_items(self.cf, needs, times)
+        except ValueError as e:
+            self._undo.pop()
+            messagebox.showerror("Cannot add", str(e))
+            return
+        self._mark_dirty()
+        self._refresh_inventory()
+        self._refresh_guide(keep=key)
+        self.status.set("Added the ingredients for %s%s: %s. Save to write the file."
+                        % (guide.name_of(key), " x%d" % times if times > 1 else "",
+                           ", ".join("%d %s" % (n * times, guide.label(p)) for p, n in needs)))
 
     def _refresh_worlds(self):
         tree = self.worlds_tree

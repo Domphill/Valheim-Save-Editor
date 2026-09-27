@@ -50,23 +50,36 @@ class GuideDataTests(unittest.TestCase):
         self.assertIn(" · or 1 Scrap Iron, 2 Coal @ Smelter", guide.recipe_text("Iron"), "both smelter inputs are shown")
         self.assertEqual(guide.recipe_text("Hammer"), "3 Wood, 2 Stone @ by hand")
 
+    def test_ingredients(self):
+        self.assertEqual(guide.ingredients_for("MisthareSupreme"), [("HareMeat", 1), ("MushroomJotunPuffs", 3), ("Carrot", 2)])
+        self.assertEqual(guide.ingredients_for("Eitr"), [("Softtissue", 1), ("Sap", 1)])
+        self.assertEqual(guide.ingredients_for("MeadHealthMedium")[0], ("Honey", 10), "the mead base's ingredients")
+        self.assertEqual(guide.ingredients_for("BlackCore"), [], "found, not made")
+        self.assertEqual(guide.piece_ingredients("blackforge"), [("BlackMarble", 10), ("YggdrasilWood", 10), ("BlackCore", 5)])
+        self.assertEqual(guide.find_piece("black forge"), "blackforge")
+        self.assertEqual(guide.find_piece("piece_sapcollector"), "piece_sapcollector")
+        self.assertIsNone(guide.find_piece("no such thing"))
+        self.assertEqual(guide.needs_for(("piece", "portal_wood")), [("GreydwarfEye", 10), ("FineWood", 20), ("SurtlingCore", 2)])
+        self.assertEqual(guide.name_of(("item", "SwordMistwalker")), "Mistwalker")
+        self.assertEqual(guide.name_of(("piece", "blackforge")), "Black Forge")
+
     def test_mistlands_food_matches_the_game(self):
         secs = dict(guide.sections(guide.BIOMES[5], None))
-        foods = {label: detail for label, _, detail in secs["Food"]}
+        foods = {label: detail for label, _, detail, _ in secs["Food"]}
         self.assertIn("85 hp, 28 stam", foods["Misthare Supreme"])
         self.assertIn("26 hp, 80 stam", foods["Salad"])
         self.assertIn("85 eitr", foods["Seeker Aspic"])
-        mats = {label: detail for label, _, detail in secs["Materials to find or make"]}
+        mats = {label: detail for label, _, detail, _ in secs["Materials to find or make"]}
         self.assertEqual(mats["Dvergr Extractor"], "cannot go through a portal")
         self.assertEqual(mats["Refined Eitr"], "1 Soft Tissue, 1 Sap @ Eitr Refinery")
         self.assertEqual(mats["Black Core"], "")
         swamp = dict(guide.sections(guide.BIOMES[2], None))
-        mats = {label: detail for label, _, detail in swamp["Materials to find or make"]}
+        mats = {label: detail for label, _, detail, _ in swamp["Materials to find or make"]}
         self.assertIn("cannot go through a portal", mats["Iron"])
         self.assertIn("Scrap Iron", mats["Iron"])
         self.assertIn("Coal @ Smelter", mats["Iron"], "the smelter's fuel is part of the cost")
         self.assertFalse([m for m in mats if m.startswith(("Mead Base", "Uncooked"))], "no intermediates")
-        self.assertTrue([label for label, _, _ in secs["Food"] if "Mistlands" in label], "the 1.0 feast is a food")
+        self.assertTrue([label for label, _, _, _ in secs["Food"] if "Mistlands" in label], "the 1.0 feast is a food")
 
 
 class GuideStatusTests(unittest.TestCase):
@@ -100,10 +113,12 @@ class GuideStatusTests(unittest.TestCase):
         self.assertEqual(meadows["Boss"][0][1], "done", "trophy counts as beaten")
         forest = dict(guide.sections(guide.BIOMES[1], cf))
         self.assertEqual(forest["Boss"][0][1], "done", "guardian power counts as beaten")
-        self.assertIn(("Forge", "can build", "4 Stone, 4 Coal, 10 Wood, 6 Copper"), forest["Stations and base pieces"])
+        self.assertIn(("Forge", "can build", "4 Stone, 4 Coal, 10 Wood, 6 Copper", ("piece", "forge")),
+                      forest["Stations and base pieces"])
         swamp = dict(guide.sections(guide.BIOMES[2], cf))
-        self.assertEqual(swamp["Boss"][0][1], "")
-        self.assertIn(("Ironhead Arrow", "in bag", "8 Wood, 1 Iron, 2 Feathers @ Forge level 2 (makes 20)"), swamp["Ammo"])
+        self.assertEqual(swamp["Boss"][0], ("Bonemass", "", "10 Withered Bones at the altar", None))
+        self.assertIn(("Ironhead Arrow", "in bag", "8 Wood, 1 Iron, 2 Feathers @ Forge level 2 (makes 20)",
+                       ("item", "ArrowIron")), swamp["Ammo"])
 
 
 if __name__ == "__main__":

@@ -295,6 +295,49 @@ def clear_marks(cf):
     return n
 
 
+# -- giving a recipe's ingredients ---------------------------------------------
+
+def free_slots(cf):
+    """Empty slots: the main rows first, top to bottom and left to right, the hotbar last."""
+    used = {(it.x, it.y) for it in cf.items}
+    slots = [(x, y) for y in range(cf.inventory_rows) for x in range(fch.INVENTORY_W) if (x, y) not in used]
+    return sorted(slots, key=lambda s: (s[1] == 0, s[1], s[0]))
+
+
+def give_items(cf, needs, times=1):
+    """Put `times` sets of needs ([(prefab, amount), ...]) into the inventory as materials (no
+    crafter): existing unmarked stacks are topped up first, then empty slots are filled, split
+    at the stack limit. Nothing changes unless it all fits. Returns (new items, [(item, added)])."""
+    if not cf.has_data:
+        raise ValueError("This character has no player data yet, so it has no inventory.")
+    times = max(1, int(times))
+    wanted = {}
+    for prefab, amount in needs:
+        name, _ = resolve_item(prefab)
+        wanted[name] = wanted.get(name, 0) + int(amount) * times
+    topups, new = [], []
+    for name, left in wanted.items():
+        limit = search.max_stack(name) or 1
+        for it in cf.items:
+            if left and item_name(it) == name and not it.cheated and it.stack < limit:
+                add = min(limit - it.stack, left)
+                topups.append((it, add))
+                left -= add
+        while left > 0:
+            new.append((name, min(limit, left)))
+            left -= min(limit, left)
+    slots = free_slots(cf)
+    if len(new) > len(slots):
+        raise ValueError("That needs %d empty slot(s) and the inventory has %d. Make room first."
+                         % (len(new), len(slots)))
+    for it, add in topups:
+        it.stack += add
+        it.refresh_flags()
+    added = [add_item(cf, name, x, y, stack=stack, crafted_by_character=False)
+             for (name, stack), (x, y) in zip(new, slots)]
+    return added, topups
+
+
 # -- whole-inventory actions ---------------------------------------------------
 
 REFILL_QUICK = ("food", "ammo")   # what "resupply" means: food, meads, arrows and bolts

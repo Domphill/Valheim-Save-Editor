@@ -9,13 +9,14 @@
     python -m vse rows  <file.fch> [ROWS] [--wider | --no-wider] [--deeper | --no-deeper]
     python -m vse refill <file.fch> [--all]      (food, meads and ammo to full stacks; --all: everything but coins)
     python -m vse repair <file.fch>              (every worn item to full durability)
+    python -m vse give  <file.fch> Mistwalker [--times N]   (the ingredients of an item, food, mead or station)
 
 Every write goes through the same backup/verify/replace pipeline as the GUI.
 """
 import argparse
 import sys
 
-from . import __version__, core, fch, paths
+from . import __version__, core, fch, guide, paths, search
 
 
 def _load(path):
@@ -177,6 +178,30 @@ def cmd_repair(a):
     return 0
 
 
+def cmd_give(a):
+    cf = _load(a.file)
+    try:
+        name, _ = core.resolve_item(a.thing)
+        key = ("item", name)
+    except ValueError:
+        piece = guide.find_piece(a.thing)
+        if piece is None:
+            raise ValueError("Unknown item or station: %r" % a.thing)
+        key = ("piece", piece)
+    needs = guide.needs_for(key)
+    if not needs:
+        print("%s is found, not made; nothing to add" % guide.name_of(key))
+        return 1
+    added, topped = core.give_items(cf, needs, a.times)
+    for it, n in topped:
+        print("   %-26s +%d (now x%d)" % (core.item_name(it), n, it.stack))
+    for it in added:
+        print("   %-26s x%d at %d,%d" % (core.item_name(it), it.stack, it.x, it.y))
+    print("added the ingredients for %s%s" % (guide.name_of(key), " x%d" % a.times if a.times > 1 else ""))
+    _save(cf, a.file)
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m vse", description="Valheim Save Editor %s" % __version__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -229,6 +254,11 @@ def main(argv=None):
     rp = sub.add_parser("repair", help="set every worn item to its maximum durability")
     rp.add_argument("file")
     rp.set_defaults(fn=cmd_repair)
+    gv = sub.add_parser("give", help="add the ingredients of an item, food, mead or station piece")
+    gv.add_argument("file")
+    gv.add_argument("thing", help="prefab or in-game name, e.g. Mistwalker, 'Misthare Supreme', 'Black Forge'")
+    gv.add_argument("--times", type=int, default=1, help="how many crafts' worth (default 1)")
+    gv.set_defaults(fn=cmd_give)
     a = p.parse_args(argv)
     try:
         return a.fn(a)

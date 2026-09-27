@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.0 – 2026-09-27
+
+- Guide tab: select an item, food, mead or station piece and *Add ingredients to inventory*
+  puts one craft's worth (times the number in the box) into the inventory as plain materials.
+  Stacks already carried are topped up first (marked stacks are left alone), then empty slots
+  are filled, split at the stack limit, hotbar last. If it does not all fit nothing is
+  changed. For an oven dish or a mead the ingredients of the prep-table dish or the mead base
+  are given. Goes through the change list and undo like everything else.
+- CLI: `give Character.fch Mistwalker [--times N]`, also for stations (`give ... "Black Forge"`).
+
 ## 0.8.0 – 2026-09-27
 
 - Guide tab: for each biome from the Meadows to the Deep North, the boss and its offering,

@@ -72,6 +72,12 @@ def main():
         app.nb.select(tab)
         if slot:
             app.select(*slot)
+        if name == "guide":
+            for sec in app.guide_tree.get_children():
+                for row in app.guide_tree.get_children(sec):
+                    if app.guide_tree.item(row)["text"] == "Mistwalker":
+                        app.guide_tree.selection_set(row)
+                        app.guide_tree.see(row)
         for _ in range(6):
             root.update()
         time.sleep(0.4)

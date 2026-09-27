@@ -287,6 +287,41 @@ class GuiTests(unittest.TestCase):
         self.assertLessEqual(self.root.winfo_reqwidth(), w)
         self.assertLessEqual(self.root.winfo_reqheight(), h)
 
+    def test_guide_add_ingredients(self):
+        from vse import core
+        path = os.path.join(self.tmp.name, "Empty.fch")
+        with open(path, "wb") as f:
+            f.write(build_synthetic(biomes=["Meadows", "Mistlands"]))
+        app = self.app
+        app.open_file(path)
+        app.guide_hide.set(False)
+        app.guide_biome.current(5)
+        app._refresh_guide()
+        tree = app.guide_tree
+        row = [c for sec in tree.get_children() for c in tree.get_children(sec) if tree.item(c)["text"] == "Mistwalker"][0]
+        tree.selection_set(row)
+        app._guide_selection_changed()
+        self.assertEqual(app.guide_sel_var.get(), "Mistwalker needs 3 Finewood, 15 Iron, 10 Refined Eitr, 3 Wisp")
+        app.guide_times.set(2)
+        app.guide_add()
+        have = {core.item_name(i): i.stack for i in app.cf.items}
+        self.assertEqual(have, {"FineWood": 6, "Iron": 30, "Eitr": 20, "Wisp": 6})
+        self.assertTrue(app.dirty)
+        self.assertIn("Added the ingredients for Mistwalker x2", app.status.get())
+        self.assertEqual(app._guide_selected(), ("item", "SwordMistwalker"), "the row stays selected after the refresh")
+        sel = tree.selection()[0]
+        self.assertEqual(tree.item(sel)["values"][0], "", "the item itself is still not in the bag")
+        app.undo()
+        self.assertEqual(app.cf.items, [])
+        # a raw material has nothing to add
+        core_row = [c for sec in tree.get_children() for c in tree.get_children(sec) if tree.item(c)["text"] == "Black Core"][0]
+        tree.selection_set(core_row)
+        app._guide_selection_changed()
+        self.assertEqual(app.guide_sel_var.get(), "Black Core is found, not made.")
+        app.guide_add()
+        self.assertIn("found, not made", app.status.get())
+        self.assertEqual(app.cf.items, [])
+
     def test_nothing_to_save_is_not_written(self):
         app = self.app
         app.open_file(self.path)

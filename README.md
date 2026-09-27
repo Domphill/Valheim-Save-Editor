@@ -24,7 +24,8 @@ What it edits:
 - **Guide** (read only): for each biome, the boss, the stations to build, the gear, the foods
   with their values, the meads and the materials to look for, with recipes and costs read from
   the game files, ticked against what the open character has in its inventory, has the recipe
-  for, or has picked up before.
+  for, or has picked up before. Select a row and *Add ingredients to inventory* puts what the
+  recipe needs into free slots.
 
 What it does not touch: worlds, other players, servers, anything while the game is running.
 Steam version only; the Xbox/Game Pass build stores characters in a container this tool
@@ -115,6 +116,8 @@ For machines without a desktop, or for scripting. Same backup and verification a
     python -m vse rows   Character.fch 6               # set the row count directly
     python -m vse refill Character.fch [--all]         # full stacks of food, meads and ammo (--all: materials too)
     python -m vse repair Character.fch                 # every worn item to full durability
+    python -m vse give   Character.fch Mistwalker      # the ingredients of an item, food, mead or station
+    python -m vse give   Character.fch "Black Forge" --times 2
 
 Slots are `column,row`, columns 0 to 7, row 0 being the hotbar and the last row one less
 than the character's row count. World IDs come from the `worlds` command.

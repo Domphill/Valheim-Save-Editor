@@ -450,6 +450,76 @@ class RefillRepairTests(unittest.TestCase):
             self.assertEqual(cf.item_at(5, 0).durability_value, search.max_durability("AxeFlint", 2))
 
 
+class GiveItemsTests(unittest.TestCase):
+    def test_topup_split_and_hotbar_last(self):
+        from vse import search
+        H = itemdb.ITEM_NAME_TO_HASH
+        cf = fch.CharacterFile(build_synthetic(items=[fch.Item.new(H["Wood"], 0, 1, stack=40)]))
+        added, topped = core.give_items(cf, [("Wood", 70), ("Iron", 2)])
+        self.assertEqual([(core.item_name(it), n) for it, n in topped], [("Wood", 10)])
+        self.assertEqual(cf.item_at(0, 1).stack, search.max_stack("Wood"))
+        self.assertEqual(sorted((core.item_name(i), i.stack) for i in added), [("Iron", 2), ("Wood", 10), ("Wood", 50)])
+        self.assertTrue(all(i.y == 1 for i in added), "row 1 fills before the hotbar")
+        self.assertTrue(all(i.crafter_name == "" and not i.cheated for i in added))
+        self.assertEqual(fch.CharacterFile(cf.to_bytes()).item_at(1, 1).stack, added[0].stack)
+        # times multiplies, and a marked stack is never topped up (the unmarked 10-stack is)
+        cf.items[0].cheated = True
+        cf.items[0].stack = 1
+        added, topped = core.give_items(cf, [("Wood", 3)], times=2)
+        self.assertEqual([(core.item_name(it), it.cheated, n) for it, n in topped], [("Wood", False, 6)])
+        self.assertEqual(added, [])
+        self.assertEqual(cf.items[0].stack, 1)
+
+    def test_all_or_nothing_and_unknown(self):
+        H = itemdb.ITEM_NAME_TO_HASH
+        items = [fch.Item.new(H["Stone"], x, y, stack=1) for y in range(4) for x in range(8)][:31]   # one slot free
+        cf = fch.CharacterFile(build_synthetic(items=items))
+        before = cf.to_bytes()
+        with self.assertRaises(ValueError):
+            core.give_items(cf, [("Wood", 60)])            # two stacks, one slot
+        self.assertEqual(cf.to_bytes(), before, "a refused give changes nothing")
+        with self.assertRaises(ValueError):
+            core.give_items(cf, [("NoSuchThing", 1)])
+        self.assertEqual(cf.to_bytes(), before)
+        added, _ = core.give_items(cf, [("Wood", 50)])
+        self.assertEqual((core.item_name(added[0]), added[0].stack, (added[0].x, added[0].y)), ("Wood", 50, (7, 3)))
+        with self.assertRaises(ValueError):
+            core.give_items(fch.CharacterFile(build_synthetic(has_data=False)), [("Wood", 1)])
+
+    def test_cli_give(self):
+        import io
+        from contextlib import redirect_stdout
+        from vse import cli
+        if core.is_valheim_running():
+            self.skipTest("Valheim is running")
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "Tester.fch")
+            with open(path, "wb") as f:
+                f.write(build_synthetic())
+            saved_env = os.environ.get("LOCALAPPDATA")
+            os.environ["LOCALAPPDATA"] = d
+            out = io.StringIO()
+            try:
+                with redirect_stdout(out):
+                    self.assertEqual(cli.main(["give", path, "misthare supreme"]), 0)
+                    self.assertEqual(cli.main(["give", path, "Black Forge", "--times", "2"]), 0)
+                    self.assertEqual(cli.main(["give", path, "BlackCore"]), 1)      # found, not made
+                    self.assertEqual(cli.main(["give", path, "no such thing"]), 1)
+            finally:
+                if saved_env is None:
+                    os.environ.pop("LOCALAPPDATA", None)
+                else:
+                    os.environ["LOCALAPPDATA"] = saved_env
+            self.assertIn("added the ingredients for Misthare Supreme", out.getvalue())
+            self.assertIn("added the ingredients for Black Forge x2", out.getvalue())
+            cf = fch.CharacterFile.load(path)
+            have = {core.item_name(i): i.stack for i in cf.items}
+            self.assertEqual(have["HareMeat"], 1)
+            self.assertEqual(have["MushroomJotunPuffs"], 3)
+            self.assertEqual(have["BlackCore"], 10)
+            self.assertEqual(have["BlackMarble"], 20)
+
+
 class RealFileTest(unittest.TestCase):
     def test_real_file_roundtrip(self):
         p = os.environ.get("VSE_TEST_FCH")

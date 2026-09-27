@@ -6,6 +6,7 @@ material belongs to (a crafted item belongs to the biome of its highest ingredie
 bosses, and short hand-written notes.
 """
 import collections
+import re
 
 from . import guidedata as gd
 from . import itemdata, search
@@ -163,17 +164,56 @@ def _res_text(res):
     return ", ".join("%d %s" % (n, label(i)) for i, n in res)
 
 
-def _one_recipe_text(rec):
+def _resolved(rec):
+    """(ingredients, where) for one recipe, following one intermediate step: the prep-table
+    dish behind an oven food, the mead base behind a mead."""
     station, level, amount, res = rec
     where = station_name(station) + (" level %d" % level if level > 1 else "")
     if len(res) == 1 and res[0][0] not in MATERIAL_TIER and res[0][0] in gd.RECIPES:
         inner = recipes_for(res[0][0])[0]
         where = station_name(inner[0]) + (" level %d" % inner[1] if inner[1] > 1 else "") + ", then " + station_name(station)
         res = inner[3]
+    return list(res), where
+
+
+def _one_recipe_text(rec):
+    res, where = _resolved(rec)
     out = "%s @ %s" % (_res_text(res), where)
-    if amount > 1:
-        out += " (makes %d)" % amount
+    if rec[2] > 1:
+        out += " (makes %d)" % rec[2]
     return out
+
+
+def ingredients_for(prefab):
+    """[(ingredient prefab, amount)] for one craft by the earliest-biome way; [] if it is not made."""
+    ways = recipes_for(prefab)
+    return _resolved(ways[0])[0] if ways else []
+
+
+def piece_ingredients(prefab):
+    return list(gd.PIECES[prefab][3]) if prefab in gd.PIECES else []
+
+
+def find_piece(text):
+    """Piece prefab from a prefab or English name, any case or spacing; None if unknown."""
+    key = re.sub(r"[^a-z0-9]+", "", (text or "").lower())
+    if not key:
+        return None
+    for prefab, row in gd.PIECES.items():
+        if key in (re.sub(r"[^a-z0-9]+", "", prefab.lower()), re.sub(r"[^a-z0-9]+", "", row[0].lower())):
+            return prefab
+    return None
+
+
+def needs_for(key):
+    """Ingredients for a Guide row key: ('item', prefab) or ('piece', prefab)."""
+    kind, prefab = key
+    return ingredients_for(prefab) if kind == "item" else piece_ingredients(prefab)
+
+
+def name_of(key):
+    kind, prefab = key
+    return label(prefab) if kind == "item" else gd.PIECES[prefab][0]
 
 
 def recipe_text(prefab):
@@ -223,7 +263,8 @@ def furthest_biome(cf):
 
 
 def sections(biome, cf):
-    """[(section title, [(label, status, detail), ...]), ...] for one biome."""
+    """[(section title, [(label, status, detail, key), ...]), ...] for one biome. key is
+    ('item', prefab), ('piece', prefab) or None, for needs_for()."""
     t = biome.tier
     out = []
 
@@ -231,7 +272,7 @@ def sections(biome, cf):
     if cf is not None and cf.has_data:
         if biome.gp_key in cf.uniques or (biome.boss_trophy and biome.boss_trophy in cf.trophies):
             st = "done"
-    out.append(("Boss", [(biome.boss, st, biome.offering)]))
+    out.append(("Boss", [(biome.boss, st, biome.offering, None)]))
 
     rows = []
     for prefab, (name, token, station, res, extends) in sorted(gd.PIECES.items(), key=lambda kv: kv[1][0]):
@@ -243,12 +284,12 @@ def sections(biome, cf):
         detail = _res_text(res)
         if extends:
             detail += " (upgrades the %s)" % station_name(extends)
-        rows.append((name, pst, detail))
+        rows.append((name, pst, detail, ("piece", prefab)))
     out.append(("Stations and base pieces", rows))
 
     craftable = [p for p in gd.RECIPES if p in itemdata.ITEM_DATA and tier(p) == t]
     for title, types in SECTION_TYPES:
-        rows = [(search.label(p), status(cf, p), recipe_text(p))
+        rows = [(search.label(p), status(cf, p), recipe_text(p), ("item", p))
                 for p in craftable if itemdata.ITEM_DATA[p][1] in types]
         rows.sort()
         out.append((title, rows))
@@ -262,11 +303,11 @@ def sections(biome, cf):
     for p, stats_of in foods:
         hp, stam, eitr, mins = gd.FOODS[stats_of]
         stats = "%d hp, %d stam" % (hp, stam) + (", %d eitr" % eitr if eitr else "") + ", %d min" % mins
-        label = search.label(p) + (" (feast, shared)" if p != stats_of else "")
-        rows.append((label, status(cf, p), stats + (" · " + recipe_text(p) if p in gd.RECIPES else "")))
+        text = search.label(p) + (" (feast, shared)" if p != stats_of else "")
+        rows.append((text, status(cf, p), stats + (" · " + recipe_text(p) if p in gd.RECIPES else ""), ("item", p)))
     out.append(("Food", rows))
 
-    rows = [(search.label(p), status(cf, p), recipe_text(p)) for p in craftable
+    rows = [(search.label(p), status(cf, p), recipe_text(p), ("item", p)) for p in craftable
             if itemdata.ITEM_DATA[p][1] == 2 and p not in gd.FOODS]
     rows.sort()
     out.append(("Meads and potions", rows))
@@ -283,7 +324,7 @@ def sections(biome, cf):
         detail = recipe_text(p) if p in gd.RECIPES else ""
         if p in gd.NO_PORTAL:
             detail += (" · " if detail else "") + "cannot go through a portal"
-        rows.append((search.label(p), status(cf, p), detail))
+        rows.append((search.label(p), status(cf, p), detail, ("item", p)))
     rows.sort()
     out.append(("Materials to find or make", rows))
     return out
