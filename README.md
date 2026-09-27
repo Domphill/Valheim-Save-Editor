@@ -12,7 +12,9 @@ What it edits:
 - **Inventory**: add an item by its in-game or prefab name with stack, quality and
   durability, change those on an existing item, or remove one. Added items can carry your
   character's name as the crafter, the same as gear you crafted yourself, or no crafter at
-  all, the same as raw materials.
+  all, the same as raw materials. *Refill* tops every food, mead and ammo stack (or every
+  stack but coins) up to the game's limit in one click; *Repair all* brings worn gear back
+  to full durability.
 - **Inventory size**: the number of rows (4 to the game's limit of 9) and Haldor's two pocket
   upgrades, *Wider Pockets* and *Deeper Pockets*, which each add a row. Ticking one adds its row
   and marks it as bought, exactly as buying it from Haldor does.
@@ -105,6 +107,8 @@ For machines without a desktop, or for scripting. Same backup and verification a
     python -m vse rows   Character.fch                 # show rows and pocket upgrades
     python -m vse rows   Character.fch --wider         # buy Wider Pockets: one more row
     python -m vse rows   Character.fch 6               # set the row count directly
+    python -m vse refill Character.fch [--all]         # full stacks of food, meads and ammo (--all: materials too)
+    python -m vse repair Character.fch                 # every worn item to full durability
 
 Slots are `column,row`, columns 0 to 7, row 0 being the hotbar and the last row one less
 than the character's row count. World IDs come from the `worlds` command.

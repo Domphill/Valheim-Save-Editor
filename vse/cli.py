@@ -7,6 +7,8 @@
     python -m vse worlds <file.fch>
     python -m vse forget <file.fch> WORLD_ID [--map-only | --death-only]
     python -m vse rows  <file.fch> [ROWS] [--wider | --no-wider] [--deeper | --no-deeper]
+    python -m vse refill <file.fch> [--all]      (food, meads and ammo to full stacks; --all: everything but coins)
+    python -m vse repair <file.fch>              (every worn item to full durability)
 
 Every write goes through the same backup/verify/replace pipeline as the GUI.
 """
@@ -153,6 +155,28 @@ def cmd_rows(a):
     return 0
 
 
+def cmd_refill(a):
+    cf = _load(a.file)
+    changed = core.refill_stacks(cf, None if a.all else core.REFILL_QUICK)
+    for it in changed:
+        print("   %-26s -> x%d" % (core.item_name(it), it.stack))
+    print("refilled %d stack(s)" % len(changed))
+    if changed:
+        _save(cf, a.file)
+    return 0
+
+
+def cmd_repair(a):
+    cf = _load(a.file)
+    changed = core.repair_all(cf)
+    for it in changed:
+        print("   %-26s -> %g" % (core.item_name(it), it.durability_value))
+    print("repaired %d item(s)" % len(changed))
+    if changed:
+        _save(cf, a.file)
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m vse", description="Valheim Save Editor %s" % __version__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -198,6 +222,13 @@ def main(argv=None):
                     help="Deeper Pockets bought (one more row)")
     rw.add_argument("--no-deeper", dest="deeper", action="store_const", const=False)
     rw.set_defaults(fn=cmd_rows)
+    rf = sub.add_parser("refill", help="top up food, meads and ammo to full stacks")
+    rf.add_argument("file")
+    rf.add_argument("--all", action="store_true", help="every stackable item (materials too), never coins")
+    rf.set_defaults(fn=cmd_refill)
+    rp = sub.add_parser("repair", help="set every worn item to its maximum durability")
+    rp.add_argument("file")
+    rp.set_defaults(fn=cmd_repair)
     a = p.parse_args(argv)
     try:
         return a.fn(a)

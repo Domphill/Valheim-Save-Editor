@@ -370,6 +370,84 @@ class InventorySizeTests(unittest.TestCase):
             self.assertEqual((cf.inventory_rows, cf.has_unique("invslot2")), (6, True))
 
 
+class RefillRepairTests(unittest.TestCase):
+    def setUp(self):
+        H = itemdb.ITEM_NAME_TO_HASH
+        self.items = [fch.Item.new(H["Wood"], 0, 0, stack=20),
+                      fch.Item.new(H["ArrowIron"], 1, 0, stack=10),
+                      fch.Item.new(H["Sausages"], 2, 0, stack=3),
+                      fch.Item.new(H["MeadHealthMinor"], 3, 0, stack=1),
+                      fch.Item.new(H["Coins"], 4, 0, stack=5),
+                      fch.Item.new(H["AxeFlint"], 5, 0, quality=2, durability=50, crafter_id=1, crafter_name="Tester"),
+                      fch.Item.new(H["SwordBronze"], 6, 0, quality=1, durability=9999)]   # above the table: keep
+        self.items[1].flags |= fch.F_EQUIPPED
+        self.data = build_synthetic(items=self.items)
+
+    def test_refill(self):
+        from vse import search
+        cf = fch.CharacterFile(self.data)
+        by = lambda n: cf.item_at(*{"Wood": (0, 0), "ArrowIron": (1, 0), "Sausages": (2, 0),
+                                    "MeadHealthMinor": (3, 0), "Coins": (4, 0)}[n])
+        changed = core.refill_stacks(cf, core.REFILL_QUICK)
+        self.assertEqual(sorted(core.item_name(i) for i in changed), ["ArrowIron", "MeadHealthMinor", "Sausages"])
+        self.assertEqual(by("ArrowIron").stack, search.max_stack("ArrowIron"))
+        self.assertTrue(by("ArrowIron").equipped, "refilling must keep the equipped bit")
+        self.assertEqual(by("Sausages").stack, search.max_stack("Sausages"))
+        self.assertEqual(by("MeadHealthMinor").stack, search.max_stack("MeadHealthMinor"))
+        self.assertEqual((by("Wood").stack, by("Coins").stack), (20, 5), "materials and coins are not 'food & ammo'")
+        self.assertEqual(core.refill_stacks(cf, core.REFILL_QUICK), [], "second pass changes nothing")
+        changed = core.refill_stacks(cf)
+        self.assertEqual([core.item_name(i) for i in changed], ["Wood"])
+        self.assertEqual((by("Wood").stack, by("Coins").stack), (search.max_stack("Wood"), 5), "coins are never refilled")
+        cf2 = fch.CharacterFile(cf.to_bytes())
+        self.assertEqual(cf2.item_at(1, 0).stack, search.max_stack("ArrowIron"))
+        self.assertTrue(any("ArrowIron at 1,0: stack 10 ->" in l for l in core.describe_changes(cf)))
+
+    def test_repair(self):
+        from vse import search
+        cf = fch.CharacterFile(self.data)
+        changed = core.repair_all(cf)
+        self.assertEqual([core.item_name(i) for i in changed], ["AxeFlint"])
+        self.assertEqual(cf.item_at(5, 0).durability_value, search.max_durability("AxeFlint", 2))
+        self.assertEqual(cf.item_at(6, 0).durability_value, 9999.0, "never lower a value above the table")
+        self.assertEqual(cf.item_at(2, 0).durability, 10000, "food has no durability to repair")
+        self.assertEqual(core.repair_all(cf), [])
+
+    def test_cli_refill_and_repair(self):
+        import io
+        from contextlib import redirect_stdout
+        from vse import cli, search
+        if core.is_valheim_running():
+            self.skipTest("Valheim is running")
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "Tester.fch")
+            with open(path, "wb") as f:
+                f.write(self.data)
+            saved_env = os.environ.get("LOCALAPPDATA")
+            os.environ["LOCALAPPDATA"] = d
+            out = io.StringIO()
+            try:
+                with redirect_stdout(out):
+                    self.assertEqual(cli.main(["refill", path]), 0)
+                    self.assertEqual(cli.main(["refill", path, "--all"]), 0)
+                    self.assertEqual(cli.main(["repair", path]), 0)
+                    self.assertEqual(cli.main(["repair", path]), 0)   # nothing left: no save, still 0
+            finally:
+                if saved_env is None:
+                    os.environ.pop("LOCALAPPDATA", None)
+                else:
+                    os.environ["LOCALAPPDATA"] = saved_env
+            text = out.getvalue()
+            self.assertIn("refilled 3 stack(s)", text)
+            self.assertIn("refilled 1 stack(s)", text)
+            self.assertIn("repaired 1 item(s)", text)
+            self.assertIn("repaired 0 item(s)", text)
+            cf = fch.CharacterFile.load(path)
+            self.assertEqual(cf.item_at(0, 0).stack, search.max_stack("Wood"))
+            self.assertEqual(cf.item_at(4, 0).stack, 5)
+            self.assertEqual(cf.item_at(5, 0).durability_value, search.max_durability("AxeFlint", 2))
+
+
 class RealFileTest(unittest.TestCase):
     def test_real_file_roundtrip(self):
         p = os.environ.get("VSE_TEST_FCH")

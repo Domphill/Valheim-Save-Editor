@@ -229,6 +229,33 @@ class GuiTests(unittest.TestCase):
             self.assertLessEqual(self.root.winfo_reqwidth(), w)
             self.assertLessEqual(self.root.winfo_reqheight(), h)
 
+    def test_refill_and_repair_buttons(self):
+        from vse import search
+        items = [fch.Item.new(itemdb.ITEM_NAME_TO_HASH["ArrowIron"], 0, 0, stack=7),
+                 fch.Item.new(itemdb.ITEM_NAME_TO_HASH["Wood"], 1, 0, stack=7),
+                 fch.Item.new(itemdb.ITEM_NAME_TO_HASH["AxeFlint"], 2, 0, quality=1, durability=1)]
+        path = os.path.join(self.tmp.name, "Supplies.fch")
+        with open(path, "wb") as f:
+            f.write(build_synthetic(items=items))
+        app = self.app
+        app.open_file(path)
+        app.refill()
+        self.assertEqual((app.by_slot[(0, 0)].stack, app.by_slot[(1, 0)].stack), (search.max_stack("ArrowIron"), 7))
+        self.assertIn("Refilled 1 item", app.status.get())
+        self.assertTrue(app.dirty)
+        app.refill(True)
+        self.assertEqual(app.by_slot[(1, 0)].stack, search.max_stack("Wood"))
+        app.repair_all()
+        self.assertEqual(app.by_slot[(2, 0)].durability_value, search.max_durability("AxeFlint", 1))
+        app.repair_all()
+        self.assertIn("Nothing to repair", app.status.get())
+        app.undo()
+        self.assertEqual(app.by_slot[(2, 0)].durability, 100)
+        app.undo()
+        app.undo()
+        self.assertEqual((app.by_slot[(0, 0)].stack, app.by_slot[(1, 0)].stack), (7, 7))
+        self.assertFalse(app.dirty)
+
     def test_nothing_to_save_is_not_written(self):
         app = self.app
         app.open_file(self.path)

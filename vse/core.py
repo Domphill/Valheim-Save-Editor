@@ -295,6 +295,45 @@ def clear_marks(cf):
     return n
 
 
+# -- whole-inventory actions ---------------------------------------------------
+
+REFILL_QUICK = ("food", "ammo")   # what "resupply" means: food, meads, arrows and bolts
+NOT_REFILLED = ("Coins",)         # currency, not supplies
+
+
+def refill_stacks(cf, categories=None):
+    """Fill every stackable item up to the game's stack limit. categories: the search categories
+    to include, or None for every stackable item (coins excepted). Returns the items changed."""
+    changed = []
+    for it in cf.items:
+        name = item_name(it)
+        ms = search.max_stack(name)
+        if not ms or ms <= 1 or name in NOT_REFILLED:
+            continue
+        if categories and search.category(name) not in categories:
+            continue
+        if it.stack < ms:
+            it.stack = ms
+            it.refresh_flags()
+            changed.append(it)
+    return changed
+
+
+def repair_all(cf):
+    """Raise every worn item to the game's maximum durability for its quality. Never lowers one:
+    the game can store more than the table says (crafting-skill bonus). Returns the items changed."""
+    changed = []
+    for it in cf.items:
+        name = item_name(it)
+        if not search.uses_durability(name):
+            continue
+        target = int(round(search.max_durability(name, it.quality) * 100))
+        if it.durability < target:
+            it.durability = target
+            changed.append(it)
+    return changed
+
+
 # -- inventory size ------------------------------------------------------------
 
 # Haldor sells two inventory upgrades. Buying one adds its "buy key" to the character's uniques

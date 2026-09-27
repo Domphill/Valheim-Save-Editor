@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.7.0 – 2026-09-27
+
+- *Refill food & ammo* tops every food, mead, arrow and bolt stack up to the game's stack
+  limit in one go; *Refill every stack* does materials as well (never coins). *Repair all
+  gear* sets every worn item to its maximum durability for its quality, and never lowers a
+  value the game stored above the table (crafting-skill bonus). All three are on the
+  Inventory tab, go through the change list and can be undone.
+- CLI: `refill [--all]` and `repair`.
+
 ## 0.6.0 – 2026-09-27
 
 - Inventory size. The grid now shows every row the character has, not only the first four.

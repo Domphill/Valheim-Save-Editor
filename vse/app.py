@@ -202,6 +202,9 @@ class App:
         top.pack(fill="x", padx=6, pady=(6, 0))
         self.summary_var = tk.StringVar(value="")
         ttk.Label(top, textvariable=self.summary_var, style="Muted.TLabel").pack(side="left")
+        ttk.Button(top, text="Repair all gear", command=self.repair_all).pack(side="right")
+        ttk.Button(top, text="Refill every stack", command=lambda: self.refill(True)).pack(side="right", padx=(0, 4))
+        ttk.Button(top, text="Refill food & ammo", command=self.refill).pack(side="right", padx=(0, 4))
 
         grid = ttk.Frame(f)
         grid.pack(anchor="w", padx=6, pady=(2, 4))
@@ -250,6 +253,8 @@ class App:
         ttk.Button(edit, text="Clear all marks", command=self.clear_all).pack(side="left", padx=(4, 0))
         ttk.Label(side, text="Red tiles are marked as cheated. Durability is the number the game shows. "
                              "Arrow keys move the selection, Delete removes the item, Ctrl+Z undoes. "
+                             "Refill (top right) tops stacks up to the game's limit: food, meads, arrows and "
+                             "bolts, or every stack but coins. Repair all sets worn gear to full durability. "
                              "Extra rows (Haldor's pocket upgrades) are set on the Character tab. "
                              "Nothing is written until you press Save.",
                   style="Hint.TLabel", wraplength="705p", justify="left").pack(anchor="w", padx=8, pady=(0, 4))
@@ -909,6 +914,31 @@ class App:
         self._refresh_inventory()
         self._refresh_checks()
         self.status.set("Removed %d mark(s). Save to write the file." % n)
+
+    def _whole_inventory(self, fn, verb, nothing):
+        if not self.cf or not self.cf.has_data:
+            messagebox.showerror("No file", "Open a character file first.")
+            return
+        self._push_undo()
+        changed = fn(self.cf)
+        if not changed:
+            self._undo.pop()
+            self.status.set(nothing)
+            return
+        self._mark_dirty()
+        self._refresh_inventory()
+        names = ", ".join(search.label(core.item_name(it)) for it in changed[:6])
+        if len(changed) > 6:
+            names += " and %d more" % (len(changed) - 6)
+        self.status.set("%s %d item(s): %s. Save to write the file." % (verb, len(changed), names))
+
+    def refill(self, everything=False):
+        cats = None if everything else core.REFILL_QUICK
+        self._whole_inventory(lambda cf: core.refill_stacks(cf, cats), "Refilled",
+                              "Nothing to refill: every %s stack is already full." % ("" if everything else "food, mead and ammo").strip())
+
+    def repair_all(self):
+        self._whole_inventory(core.repair_all, "Repaired", "Nothing to repair: all gear is at full durability.")
 
     def _refilter(self):
         cat = search.CATEGORIES[self.add_cat.current()][0] if self.add_cat.current() >= 0 else "all"
