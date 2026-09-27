@@ -106,6 +106,14 @@ def describe_changes(cf):
                 out.append("world %s: %s" % (label, ", ".join(ch)))
     if not cf.has_data:
         return out
+    if orig.inventory_rows != cf.inventory_rows:
+        out.append("Inventory rows: %d -> %d" % (orig.inventory_rows, cf.inventory_rows))
+    ua, ub = set(orig.uniques), set(cf.uniques)
+    rows_key = fch.INV_ROWS_KEY + " "
+    for key in [u for u in cf.uniques if u not in ua and not u.lower().startswith(rows_key)]:
+        out.append("+ key %s" % unique_label(key))
+    for key in [u for u in orig.uniques if u not in ub and not u.lower().startswith(rows_key)]:
+        out.append("- key %s" % unique_label(key))
     a = {(i.x, i.y): i for i in orig.items}
     b = {(i.x, i.y): i for i in cf.items}
     for slot in sorted(set(a) | set(b), key=lambda s: (s[1], s[0])):
@@ -249,8 +257,9 @@ def add_item(cf, name, x, y, stack=1, quality=1, durability=None, crafted_by_cha
     if durability is None:
         durability = default_durability(canonical, quality)
     _check_values(canonical, stack, quality, durability)
-    if not (0 <= x < fch.INVENTORY_W and 0 <= y < fch.INVENTORY_H):
-        raise ValueError("slot out of range")
+    if not (0 <= x < fch.INVENTORY_W and 0 <= y < cf.inventory_rows):
+        raise ValueError("slot (%d,%d) is outside this character's inventory of %d rows"
+                         % (x, y, cf.inventory_rows))
     if cf.item_at(x, y) is not None:
         raise ValueError("slot (%d,%d) is occupied" % (x, y))
     if crafted_by_character:
@@ -284,6 +293,53 @@ def clear_marks(cf):
             it.cheated = False
             n += 1
     return n
+
+
+# -- inventory size ------------------------------------------------------------
+
+# Haldor sells two inventory upgrades. Buying one adds its "buy key" to the character's uniques
+# (so he stops offering it) and raises the "invrows" value by one (StoreGui.BuySelectedItem).
+POCKETS = {
+    1: ("invslot1", "Wider Pockets", "sold by Haldor after Moder"),
+    2: ("invslot2", "Deeper Pockets", "sold by Haldor after the Queen"),
+}
+
+
+def unique_label(key):
+    """A readable name for a player key, for the change list."""
+    for k, name, where in POCKETS.values():
+        if key == k:
+            return "%s (%s)" % (name, where)
+    return key
+
+
+def set_inventory_rows(cf, rows):
+    """Set the number of inventory rows (the game's 'invrows' key)."""
+    if not cf.has_data:
+        raise ValueError("This character has no player data yet, so it has no inventory.")
+    rows = int(rows)
+    if not (fch.INVENTORY_H <= rows <= fch.INVENTORY_MAX_H):
+        raise ValueError("Rows must be between %d and %d; the game allows no more." % (fch.INVENTORY_H, fch.INVENTORY_MAX_H))
+    below = [it for it in cf.items if it.y >= rows]
+    if below:
+        raise ValueError("%d item(s) sit in the rows being removed (%s). Move or remove them first; the game "
+                         "would drop them on the ground." % (len(below), ", ".join(item_name(it) for it in below[:6])))
+    cf.inventory_rows = rows
+    return rows
+
+
+def set_pocket(cf, n, bought):
+    """Mirror buying (or handing back) a pocket upgrade: the buy key plus one row."""
+    key = POCKETS[n][0]
+    if bool(bought) == cf.has_unique(key):
+        return cf.inventory_rows
+    if bought:
+        set_inventory_rows(cf, min(fch.INVENTORY_MAX_H, cf.inventory_rows + 1))
+        cf.add_unique(key)
+    else:
+        set_inventory_rows(cf, max(fch.INVENTORY_H, cf.inventory_rows - 1))
+        cf.remove_unique(key)
+    return cf.inventory_rows
 
 
 # -- worlds ------------------------------------------------------------------

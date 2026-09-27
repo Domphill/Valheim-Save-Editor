@@ -163,6 +163,30 @@ class App:
                                         variable=self.flag_var, command=self._on_flag_toggle)
         self.flag_chk.pack(anchor="w", padx=8, pady=(6, 6))
 
+        size = ttk.LabelFrame(f, text="Inventory size")
+        size.pack(fill="x", **PAD)
+        srow = ttk.Frame(size)
+        srow.pack(anchor="w", padx=8, pady=(4, 2))
+        ttk.Label(srow, text="Rows:").pack(side="left")
+        self.rows_var = tk.StringVar(value=str(fch.INVENTORY_H))
+        self.rows_spin = ttk.Spinbox(srow, from_=fch.INVENTORY_H, to=fch.INVENTORY_MAX_H, width=4, state="readonly",
+                                     textvariable=self.rows_var, command=self._on_rows_spin)
+        self.rows_spin.pack(side="left", padx=(4, 10))
+        self.rows_note = ttk.Label(srow, text="", style="Muted.TLabel")
+        self.rows_note.pack(side="left")
+        self.pocket_vars = {}
+        for n in sorted(core.POCKETS):
+            key, name, where = core.POCKETS[n]
+            var = tk.BooleanVar(value=False)
+            ttk.Checkbutton(size, text="%s bought  (%s; adds one row)" % (name, where), variable=var,
+                            command=lambda n=n: self._on_pocket_toggle(n)).pack(anchor="w", padx=8, pady=1)
+            self.pocket_vars[n] = var
+        ttk.Label(size, text="Every character starts with 4 rows of 8 slots. Haldor sells Wider Pockets and Deeper "
+                             "Pockets for coins; each adds a row and disappears from his list once bought. Ticking "
+                             "one here does the same. The game allows up to 9 rows. A row that still holds items "
+                             "cannot be removed.",
+                  style="Hint.TLabel", wraplength="675p", justify="left").pack(anchor="w", padx=8, pady=(4, 6))
+
         note = ("Achievements are blocked while any of these is true: the cheat flag is set, a marked "
                 "item is in the inventory, the world has cheated modifiers, or the game is modded. "
                 "This tool handles the first two. Items left in chests or on the ground keep their "
@@ -183,16 +207,20 @@ class App:
         grid.pack(anchor="w", padx=6, pady=(2, 4))
         ttk.Label(grid, text="Hotbar  (keys 1 to 8)", style="Hint.TLabel").grid(row=0, column=0, columnspan=8, sticky="w")
         ttk.Label(grid, text="Inventory", style="Hint.TLabel").grid(row=2, column=0, columnspan=8, sticky="w", pady=(6, 0))
-        for y in range(fch.INVENTORY_H):
+        # Cells exist for the game's maximum; rows past the character's count are hidden.
+        for y in range(fch.INVENTORY_MAX_H):
             for x in range(fch.INVENTORY_W):
                 lbl = tk.Label(grid, text="", font=self.small, width=13, height=3, relief="flat", bd=0,
                                highlightthickness=2, highlightbackground=C_RING, bg=C_EMPTY,
                                anchor="center", justify="center", wraplength="69p", cursor="hand2")
                 lbl.grid(row=1 if y == 0 else y + 2, column=x, padx=2, pady=2)
+                if y >= fch.INVENTORY_H:
+                    lbl.grid_remove()
                 lbl.bind("<Button-1>", lambda e, x=x, y=y: self.select(x, y))
                 lbl.bind("<Enter>", lambda e, l=lbl: l.config(highlightbackground=C_RING_HOVER))
                 lbl.bind("<Leave>", lambda e, x=x, y=y: self._ring(x, y))
                 self.cells[(x, y)] = lbl
+        self.rows_shown = fch.INVENTORY_H
 
         side = ttk.LabelFrame(f, text="Selected slot")
         side.pack(fill="x", **PAD)
@@ -222,6 +250,7 @@ class App:
         ttk.Button(edit, text="Clear all marks", command=self.clear_all).pack(side="left", padx=(4, 0))
         ttk.Label(side, text="Red tiles are marked as cheated. Durability is the number the game shows. "
                              "Arrow keys move the selection, Delete removes the item, Ctrl+Z undoes. "
+                             "Extra rows (Haldor's pocket upgrades) are set on the Character tab. "
                              "Nothing is written until you press Save.",
                   style="Hint.TLabel", wraplength="705p", justify="left").pack(anchor="w", padx=8, pady=(0, 4))
 
@@ -549,7 +578,6 @@ class App:
         if cf.has_data:
             v["health"].set("%.0f" % cf.max_health)
             v["stamina"].set("%.0f" % cf.max_stamina)
-            v["items"].set("%d" % len(cf.items))
             v["skills"].set("%d" % len(cf.skills))
         else:
             for k in ("health", "stamina", "items", "skills"):
@@ -557,6 +585,7 @@ class App:
         self.flag_var.set(bool(cf.used_cheats))
         self.add_crafted_chk.config(text="Crafted by %s" % cf.name)
         self._refresh_checks()
+        self._refresh_size()
         self._refresh_inventory()
         self._rebuild_skill_rows()
         self._refresh_worlds()
@@ -577,17 +606,109 @@ class App:
         n = len(cf.marked_items)
         show("marks", n == 0, "No marked items in the inventory", "%d marked item(s) in the inventory" % n)
 
+    # -- inventory size -------------------------------------------------------
+
+    def _refresh_size(self):
+        cf = self.cf
+        if not cf or not cf.has_data:
+            self.rows_var.set(str(fch.INVENTORY_H))
+            self.rows_note.configure(text="")
+            for var in self.pocket_vars.values():
+                var.set(False)
+            return
+        rows = cf.inventory_rows
+        extra = (rows - fch.INVENTORY_H) * fch.INVENTORY_W
+        self.rows_var.set(str(rows))
+        self.rows_note.configure(text="%d slots" % (rows * fch.INVENTORY_W)
+                                 + (", %d more than a new character" % extra if extra > 0 else ""))
+        for n, var in self.pocket_vars.items():
+            var.set(cf.has_unique(core.POCKETS[n][0]))
+        self.info_vars["items"].set("%d in %d slots (%d rows)" % (len(cf.items), rows * fch.INVENTORY_W, rows))
+
+    def _on_rows_spin(self):
+        if not self.cf or not self.cf.has_data:
+            self.rows_var.set(str(fch.INVENTORY_H))
+            return
+        try:
+            rows = int(self.rows_var.get())
+        except ValueError:
+            self.rows_var.set(str(self.cf.inventory_rows))
+            return
+        if rows == self.cf.inventory_rows:
+            return
+        self._push_undo()
+        try:
+            core.set_inventory_rows(self.cf, rows)
+        except ValueError as e:
+            self._undo.pop()
+            self.rows_var.set(str(self.cf.inventory_rows))
+            messagebox.showerror("Cannot change rows", str(e))
+            return
+        self._mark_dirty()
+        self._refresh_size()
+        self._refresh_inventory()
+        self.status.set("Inventory set to %d rows. Save to write the file." % rows)
+
+    def _on_pocket_toggle(self, n):
+        if not self.cf or not self.cf.has_data:
+            self.pocket_vars[n].set(False)
+            return
+        bought = bool(self.pocket_vars[n].get())
+        self._push_undo()
+        try:
+            core.set_pocket(self.cf, n, bought)
+        except ValueError as e:
+            self._undo.pop()
+            self.pocket_vars[n].set(not bought)
+            messagebox.showerror("Cannot change that", str(e))
+            return
+        self._mark_dirty()
+        self._refresh_size()
+        self._refresh_inventory()
+        self.status.set("%s %s: %d rows now. Save to write the file."
+                        % (core.POCKETS[n][1], "bought" if bought else "handed back", self.cf.inventory_rows))
+
     # -- inventory ------------------------------------------------------------
 
     def _refresh_inventory(self):
         self.by_slot = {}
-        if self.cf:
+        rows = fch.INVENTORY_H
+        if self.cf and self.cf.has_data:
             for it in self.cf.items:
                 self.by_slot[(it.x, it.y)] = it
+            # Never hide an item: a file can carry rows the key does not (yet) grant.
+            rows = max(self.cf.inventory_rows, max([it.y + 1 for it in self.cf.items] + [0]))
+        self._show_rows(rows)
         for (x, y) in self.cells:
             self._render(x, y)
         self._update_summary()
         self._update_detail()
+
+    def _show_rows(self, n):
+        n = max(1, min(fch.INVENTORY_MAX_H, n))
+        if n == self.rows_shown:
+            return
+        for (x, y), lbl in self.cells.items():
+            if y < n:
+                lbl.grid()
+            else:
+                lbl.grid_remove()
+        self.rows_shown = n
+        if self.selected and self.selected[1] >= n:
+            self.selected = None
+        self._fit_window()
+
+    def _fit_window(self):
+        """Grow the window and its minimum size when the widgets need more room (extra rows)."""
+        root = self.root
+        root.update_idletasks()
+        mw, mh = root.minsize()
+        w = max(mw, root.winfo_reqwidth() + 24)
+        h = max(mh, root.winfo_reqheight() + 24)
+        if (w, h) != (mw, mh):
+            root.minsize(w, h)
+            if root.winfo_width() < w or root.winfo_height() < h:
+                root.geometry("%dx%d" % (max(w, root.winfo_width()), max(h, root.winfo_height())))
 
     def _ring(self, x, y):
         self.cells[(x, y)].config(highlightbackground=C_SELECTED if (x, y) == self.selected else C_RING)
@@ -663,9 +784,10 @@ class App:
             self.summary_var.set("")
             return
         items = self.cf.items
-        free = fch.INVENTORY_W * fch.INVENTORY_H - len(items)
-        self.summary_var.set("%d items   ·   %d marked   ·   %d equipped   ·   %d free slots"
-                             % (len(items), len(self.cf.marked_items), sum(1 for i in items if i.equipped), free))
+        rows = self.cf.inventory_rows
+        free = fch.INVENTORY_W * rows - len(items)
+        self.summary_var.set("%d rows   ·   %d items   ·   %d marked   ·   %d equipped   ·   %d free slots"
+                             % (rows, len(items), len(self.cf.marked_items), sum(1 for i in items if i.equipped), free))
 
     def _need_item(self):
         if not self.cf:
@@ -715,7 +837,7 @@ class App:
         dx = {"Left": -1, "Right": 1}.get(event.keysym, 0)
         dy = {"Up": -1, "Down": 1}.get(event.keysym, 0)
         x = min(fch.INVENTORY_W - 1, max(0, self.selected[0] + dx))
-        y = min(fch.INVENTORY_H - 1, max(0, self.selected[1] + dy))
+        y = min(self.rows_shown - 1, max(0, self.selected[1] + dy))
         self.select(x, y)
         return "break"
 

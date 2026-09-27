@@ -7,7 +7,9 @@ The game rejects the file if the trailing hash does not match the payload.
 
 Parsing logic derived from valheim_character_editor.py in
 https://github.com/ValterKane/ValhaimCheaterRemover (MIT). Item flag bits 0x01
-(picked up) and 0x02 (equipped) were identified from real 1.0 saves.
+(picked up) and 0x02 (equipped) were identified from real 1.0 saves. The inventory
+size lives in the uniques list as "invrows N" (Player.OnSpawned reads it, Haldor's
+pocket upgrades increment it); the inventory block itself stores no size.
 
 Everything the tool does not understand is kept as raw bytes and written back
 unchanged. A file is only considered editable if rebuilding it with no changes
@@ -42,7 +44,9 @@ F_PREFAB = 0x40
 F_CUSTOM = 0x80
 
 INVENTORY_W = 8
-INVENTORY_H = 4
+INVENTORY_H = 4          # rows every character starts with (Player.DefaultInventoryHeight)
+INVENTORY_MAX_H = 9      # Player.SetInventorySize clamps to this
+INV_ROWS_KEY = "invrows"  # "invrows N" in the uniques list; the game re-applies it on every spawn
 
 
 class FchError(Exception):
@@ -323,12 +327,13 @@ class Skill:
 
 
 class CharacterFile:
-    """A parsed .fch. Edit .items, .skills and .used_cheats, then to_bytes()."""
+    """A parsed .fch. Edit .items, .skills, .uniques, .worlds and .used_cheats, then to_bytes()."""
 
     def __init__(self, data):
         self.original = bytes(data)
         self.items = []
         self.skills = []
+        self.uniques = []
         self.worlds = []
         self.has_data = False
         self.max_health = self.health = self.max_stamina = 0.0
@@ -423,19 +428,25 @@ class CharacterFile:
         n = r.u16()
         self.items = [Item.parse(r) for _ in range(n)]
         mid_start = r.o
-        for _ in range(r.i32()):
+        for _ in range(r.i32()):        # known recipes
             r.string()
-        for _ in range(r.i32()):
+        for _ in range(r.i32()):        # known crafting stations and their levels
             r.string(); r.i32()
-        for _ in range(5):
+        for _ in range(2):              # known materials, shown tutorials
             for _ in range(r.i32()):
                 r.string()
-        for _ in range(r.i32()):
+        uniq_off = r.o
+        self.uniques = [r.string() for _ in range(r.i32())]
+        uniq_end = r.o
+        for _ in range(2):              # trophies, known biomes
+            for _ in range(r.i32()):
+                r.string()
+        for _ in range(r.i32()):        # known texts
             r.string(); r.string()
-        r.string(); r.string()
-        r.raw(24)
-        r.i32()
-        for _ in range(r.i32()):
+        r.string(); r.string()          # beard, hair
+        r.raw(24)                       # skin and hair colour
+        r.i32()                         # model
+        for _ in range(r.i32()):        # active foods
             r.string(); r.f32()
         if r.i32() != SKILLS_VERSION:
             raise FchError("unexpected skills version")
@@ -454,8 +465,61 @@ class CharacterFile:
         if r.o != len(blob):
             raise FchError("player data end mismatch (%d of %d bytes)" % (r.o, len(blob)))
         self._blob_pre = blob[:inv_off]
-        self._blob_mid = blob[mid_start:sk_off]
+        self._blob_mid_a = blob[mid_start:uniq_off]
+        self._blob_mid_b = blob[uniq_end:sk_off]
         self._blob_post = blob[post_start:]
+
+    # -- uniques (player keys) ---------------------------------------------
+    # A set of strings the game keeps per character: guardian powers unlocked (GP_Moder), boss
+    # kills (defeated_eikthyr), trader purchases (invslot1) and "key value" pairs ("invrows 5").
+
+    def has_unique(self, key):
+        return key in self.uniques
+
+    def add_unique(self, key):
+        if key not in self.uniques:
+            self.uniques.append(key)
+
+    def remove_unique(self, key):
+        self.uniques = [u for u in self.uniques if u != key]
+
+    def get_unique_value(self, key):
+        """Value of a 'key value' entry, or None. Keys compare case-insensitively, as in the game."""
+        key = key.lower()
+        for u in self.uniques:
+            parts = u.split(" ")
+            if len(parts) >= 2 and parts[0].lower() == key:
+                return parts[1]
+        return None
+
+    def set_unique_value(self, key, value):
+        """Replace the 'key value' entry in place, or append one."""
+        entry = "%s %s" % (key, value)
+        out, done = [], False
+        for u in self.uniques:
+            parts = u.split(" ")
+            if len(parts) >= 2 and parts[0].lower() == key.lower():
+                if not done:
+                    out.append(entry)
+                    done = True
+                continue
+            out.append(u)
+        if not done:
+            out.append(entry)
+        self.uniques = out
+
+    @property
+    def inventory_rows(self):
+        """Rows in the inventory grid: the 'invrows' key, or the default when it is absent."""
+        try:
+            n = int(self.get_unique_value(INV_ROWS_KEY))
+        except (TypeError, ValueError):
+            return INVENTORY_H
+        return max(0, min(INVENTORY_MAX_H, n))
+
+    @inventory_rows.setter
+    def inventory_rows(self, n):
+        self.set_unique_value(INV_ROWS_KEY, str(int(n)))
 
     # -- writing ---------------------------------------------------------
 
@@ -477,7 +541,9 @@ class CharacterFile:
             blob = (self._blob_pre
                     + struct.pack("<H", len(self.items))
                     + b"".join(it.to_bytes() for it in self.items)
-                    + self._blob_mid
+                    + self._blob_mid_a
+                    + struct.pack("<i", len(self.uniques)) + b"".join(write_str(u) for u in self.uniques)
+                    + self._blob_mid_b
                     + struct.pack("<i", len(self.skills))
                     + b"".join(s.to_bytes() for s in self.skills)
                     + self._blob_post)

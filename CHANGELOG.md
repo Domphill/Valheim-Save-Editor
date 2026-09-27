@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.0 – 2026-09-27
+
+- Inventory size. The grid now shows every row the character has, not only the first four.
+  Haldor's *Wider Pockets* (after Moder) and *Deeper Pockets* (after the Queen) each add a
+  row; the game keeps the count as the `invrows` player key and the purchases as `invslot1`
+  and `invslot2`. The Character tab shows the row count and the two purchases and lets you
+  change them: ticking a pocket adds its row and marks it bought so Haldor no longer offers
+  it, and the rows box goes up to the game's limit of 9. A row that still holds items cannot
+  be removed (the game would drop them on the ground). The change list reports rows and keys.
+- Player keys (guardian powers, boss kills, purchases) are now parsed and written back rather
+  than carried as opaque bytes; the round-trip guard covers them like everything else.
+- CLI: `rows` command; `dump` prints the row count and the keys.
+
 ## 0.5.0 – 2026-09-16
 
 - Item names, stack limits, quality limits and durability now come from the game files

@@ -28,7 +28,7 @@ def make_world(uid, map_bytes=b"", death=False, logout=(10.0, 30.0, -20.0)):
 
 
 def build_synthetic(name="Tester", player_id=1234567890, used_cheats=0, items=(), skills=(), has_data=True,
-                    worlds=()):
+                    worlds=(), uniques=()):
     """Build a minimal but structurally complete 1.0 profile the parser accepts."""
     def i32(v): return struct.pack("<i", v)
     def f32(v): return struct.pack("<f", v)
@@ -43,7 +43,10 @@ def build_synthetic(name="Tester", player_id=1234567890, used_cheats=0, items=()
         blob = i32(fch.PLAYERDATA_VERSION) + f32(25) + f32(25) + f32(50) + f32(0)
         blob += fch.write_str("") + f32(0) + i32(0)
         blob += struct.pack("<H", len(items)) + b"".join(it.to_bytes() for it in items)
-        blob += i32(0) * 8 + fch.write_str("") + fch.write_str("") + b"\0" * 24 + i32(0) + i32(0)
+        blob += i32(0) * 4                                                      # recipes, stations, materials, tutorials
+        blob += i32(len(uniques)) + b"".join(fch.write_str(u) for u in uniques)  # uniques (player keys)
+        blob += i32(0) * 3                                                      # trophies, biomes, texts
+        blob += fch.write_str("") + fch.write_str("") + b"\0" * 24 + i32(0) + i32(0)  # beard, hair, colours, model, foods
         blob += i32(fch.SKILLS_VERSION) + i32(len(skills)) + b"".join(s.to_bytes() for s in skills)
         blob += i32(0) + f32(50) + f32(0) + f32(0) + i32(0)
         body += i32(len(blob)) + blob
@@ -275,6 +278,96 @@ class WorldTests(unittest.TestCase):
         self.assertIsNone(fch.read_world_header(b"\x00\x00"))
         self.assertEqual(core.world_label(5227202803, {5227202803: "MyWorld"}), "MyWorld")
         self.assertEqual(core.world_label(42, {}), "Unknown world (ID 42)")
+
+
+class InventorySizeTests(unittest.TestCase):
+    def setUp(self):
+        self.items = [fch.Item.new(itemdb.ITEM_NAME_TO_HASH["Wood"], 0, 0, stack=20),
+                      fch.Item.new(itemdb.ITEM_NAME_TO_HASH["Coins"], 6, 4, stack=10)]   # fifth row
+        self.uniques = ["GP_Eikthyr", "defeated_eikthyr", "invrows 5", "invslot1"]
+        self.data = build_synthetic(items=self.items, uniques=self.uniques)
+
+    def test_parse_rows_and_keys(self):
+        cf = fch.CharacterFile(self.data)
+        self.assertTrue(cf.editable)
+        self.assertEqual(cf.uniques, self.uniques)
+        self.assertEqual(cf.inventory_rows, 5)
+        self.assertTrue(cf.has_unique("invslot1"))
+        self.assertEqual(cf.get_unique_value("InvRows"), "5", "keys compare case-insensitively, as in the game")
+        self.assertEqual(cf.to_bytes(), self.data)
+        plain = fch.CharacterFile(build_synthetic())
+        self.assertEqual((plain.inventory_rows, plain.uniques), (4, []))
+
+    def test_set_rows(self):
+        cf = fch.CharacterFile(self.data)
+        with self.assertRaises(ValueError):
+            core.set_inventory_rows(cf, 4)      # the coins sit in row 4
+        with self.assertRaises(ValueError):
+            core.set_inventory_rows(cf, fch.INVENTORY_MAX_H + 1)
+        core.set_inventory_rows(cf, 7)
+        self.assertEqual(cf.uniques.index("invrows 7"), 2, "the key keeps its place in the list")
+        core.add_item(cf, "Wood", 0, 6)
+        with self.assertRaises(ValueError):
+            core.add_item(cf, "Wood", 0, 7)
+        self.assertIn("Inventory rows: 5 -> 7", core.describe_changes(cf))
+        cf2 = fch.CharacterFile(cf.to_bytes())
+        self.assertEqual(cf2.inventory_rows, 7)
+        self.assertEqual(core.item_name(cf2.item_at(0, 6)), "Wood")
+
+    def test_pockets(self):
+        cf = fch.CharacterFile(build_synthetic(items=[fch.Item.new(1, 0, 0)]))
+        core.set_pocket(cf, 1, True)
+        self.assertEqual((cf.inventory_rows, cf.has_unique("invslot1")), (5, True))
+        core.set_pocket(cf, 2, True)
+        core.set_pocket(cf, 2, True)            # already bought: no change
+        self.assertEqual((cf.inventory_rows, cf.uniques), (6, ["invrows 6", "invslot1", "invslot2"]))
+        lines = core.describe_changes(cf)
+        self.assertIn("Inventory rows: 4 -> 6", lines)
+        self.assertTrue(any(l.startswith("+ key Wider Pockets") for l in lines), lines)
+        self.assertFalse(any("invrows" in l for l in lines), "the rows key is reported as a row count, not a key")
+        core.add_item(cf, "Wood", 0, 5)
+        with self.assertRaises(ValueError):
+            core.set_pocket(cf, 2, False)       # row 5 is in use
+        self.assertTrue(cf.has_unique("invslot2"), "a refused removal must leave the key alone")
+        core.remove_item(cf, cf.item_at(0, 5))
+        core.set_pocket(cf, 2, False)
+        core.set_pocket(cf, 1, False)
+        self.assertEqual((cf.inventory_rows, cf.uniques), (4, ["invrows 4"]))
+        self.assertEqual(fch.CharacterFile(cf.to_bytes()).uniques, ["invrows 4"])
+        with self.assertRaises(ValueError):
+            core.set_pocket(fch.CharacterFile(build_synthetic(has_data=False)), 1, True)
+
+    def test_cli_rows(self):
+        import io
+        from contextlib import redirect_stdout
+        from vse import cli
+        if core.is_valheim_running():
+            self.skipTest("Valheim is running")
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "Tester.fch")
+            with open(path, "wb") as f:
+                f.write(self.data)
+            saved_env = os.environ.get("LOCALAPPDATA")
+            os.environ["LOCALAPPDATA"] = d
+            out = io.StringIO()
+            try:
+                with redirect_stdout(out):
+                    self.assertEqual(cli.main(["rows", path]), 0)
+                    self.assertEqual(cli.main(["rows", path, "--deeper"]), 0)
+                    self.assertEqual(cli.main(["dump", path]), 0)
+                    self.assertEqual(cli.main(["rows", path, "4"]), 1)    # row 4 holds the coins
+            finally:
+                if saved_env is None:
+                    os.environ.pop("LOCALAPPDATA", None)
+                else:
+                    os.environ["LOCALAPPDATA"] = saved_env
+            text = out.getvalue()
+            self.assertIn("inventory rows: 5 (Wider Pockets)", text)
+            self.assertIn("inventory rows: 6 (Wider Pockets, Deeper Pockets)", text)
+            self.assertIn("Inventory : 6 rows", text)
+            self.assertIn("Keys (5): GP_Eikthyr", text)
+            cf = fch.CharacterFile.load(path)
+            self.assertEqual((cf.inventory_rows, cf.has_unique("invslot2")), (6, True))
 
 
 class RealFileTest(unittest.TestCase):

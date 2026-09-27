@@ -6,6 +6,7 @@
     python -m vse add   <file.fch> --slot X,Y Item [--stack N] [--quality N] [--durability F] [--no-crafter]
     python -m vse worlds <file.fch>
     python -m vse forget <file.fch> WORLD_ID [--map-only | --death-only]
+    python -m vse rows  <file.fch> [ROWS] [--wider | --no-wider] [--deeper | --no-deeper]
 
 Every write goes through the same backup/verify/replace pipeline as the GUI.
 """
@@ -31,7 +32,8 @@ def cmd_dump(a):
     if not cf.has_data:
         print("No player data (the character has never entered a world).")
         return 0
-    print("Inventory (%d items, %d marked):" % (len(cf.items), len(cf.marked_items)))
+    print("Inventory : %d rows%s" % (cf.inventory_rows, _pockets_note(cf)))
+    print("Items (%d, %d marked):" % (len(cf.items), len(cf.marked_items)))
     for it in sorted(cf.items, key=lambda i: (i.y, i.x)):
         flags = []
         if it.cheated:
@@ -44,7 +46,13 @@ def cmd_dump(a):
     print("Skills (%d):" % len(cf.skills))
     for s in sorted(cf.skills, key=lambda s: -s.level):
         print("   %-16s %5.1f" % (s.name, s.level))
+    print("Keys (%d): %s" % (len(cf.uniques), ", ".join(cf.uniques) or "-"))
     return 0
+
+
+def _pockets_note(cf):
+    bought = [core.POCKETS[n][1] for n in sorted(core.POCKETS) if cf.has_unique(core.POCKETS[n][0])]
+    return " (%s)" % ", ".join(bought) if bought else ""
 
 
 def _save(cf, path):
@@ -126,6 +134,25 @@ def cmd_forget(a):
     return 0
 
 
+def cmd_rows(a):
+    cf = _load(a.file)
+    changed = False
+    if a.rows is not None:
+        core.set_inventory_rows(cf, a.rows)
+        changed = True
+    for n, flag in ((1, a.wider), (2, a.deeper)):
+        if flag is not None:
+            core.set_pocket(cf, n, flag)
+            changed = True
+    print("inventory rows: %d%s" % (cf.inventory_rows, _pockets_note(cf)))
+    for n in sorted(core.POCKETS):
+        key, name, where = core.POCKETS[n]
+        print("   %-15s %s" % (name + ":", "bought" if cf.has_unique(key) else "not bought (%s)" % where))
+    if changed:
+        _save(cf, a.file)
+    return 0
+
+
 def main(argv=None):
     p = argparse.ArgumentParser(prog="python -m vse", description="Valheim Save Editor %s" % __version__)
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -144,7 +171,8 @@ def main(argv=None):
     ad = sub.add_parser("add", help="add an item to an empty slot")
     ad.add_argument("file")
     ad.add_argument("item", help="prefab name, e.g. ArrowIron")
-    ad.add_argument("--slot", required=True, metavar="X,Y", help="0-7,0-3; row 0 is the hotbar")
+    ad.add_argument("--slot", required=True, metavar="X,Y",
+                    help="column 0-7, row 0 upward; row 0 is the hotbar, rows past the character's count are refused")
     ad.add_argument("--stack", type=int, default=1)
     ad.add_argument("--quality", type=int, default=1)
     ad.add_argument("--durability", type=float, default=None,
@@ -160,6 +188,16 @@ def main(argv=None):
     fg.add_argument("--map-only", action="store_true", help="clear only the explored map")
     fg.add_argument("--death-only", action="store_true", help="clear only the death marker")
     fg.set_defaults(fn=cmd_forget)
+    rw = sub.add_parser("rows", help="show or set the inventory rows and Haldor's pocket upgrades")
+    rw.add_argument("file")
+    rw.add_argument("rows", nargs="?", type=int, help="%d to %d" % (fch.INVENTORY_H, fch.INVENTORY_MAX_H))
+    rw.add_argument("--wider", dest="wider", action="store_const", const=True, default=None,
+                    help="Wider Pockets bought (one more row)")
+    rw.add_argument("--no-wider", dest="wider", action="store_const", const=False)
+    rw.add_argument("--deeper", dest="deeper", action="store_const", const=True, default=None,
+                    help="Deeper Pockets bought (one more row)")
+    rw.add_argument("--no-deeper", dest="deeper", action="store_const", const=False)
+    rw.set_defaults(fn=cmd_rows)
     a = p.parse_args(argv)
     try:
         return a.fn(a)

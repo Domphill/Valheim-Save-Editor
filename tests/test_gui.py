@@ -176,6 +176,59 @@ class GuiTests(unittest.TestCase):
             self.assertLessEqual(self.root.winfo_reqwidth(), w)
             self.assertLessEqual(self.root.winfo_reqheight(), h)
 
+    def test_inventory_rows_and_pockets(self):
+        app = self.app
+        app.open_file(self.path)
+        self.assertEqual((app.rows_shown, app.rows_var.get()), (4, "4"))
+        self.assertEqual(app.cells[(0, 4)].winfo_manager(), "", "row 4 is hidden for a 4-row character")
+        # buy Wider Pockets through the checkbox
+        app.pocket_vars[1].set(True)
+        app._on_pocket_toggle(1)
+        self.assertEqual((app.cf.inventory_rows, app.rows_shown, app.rows_var.get()), (5, 5, "5"))
+        self.assertEqual(app.cells[(0, 4)].winfo_manager(), "grid")
+        self.assertTrue(app.dirty)
+        self.assertIn("5 rows", app.summary_var.get())
+        # the window grew to fit the extra row
+        self.root.update_idletasks()
+        self.assertLessEqual(self.root.winfo_reqheight(), self.root.minsize()[1])
+        # an item in the new row blocks handing the pocket back; the box reverts
+        app.select(3, 4)
+        app.add_query.set("arrow iron")
+        app._refilter()
+        app.add_item()
+        self.assertIsNotNone(app.by_slot.get((3, 4)))
+        app.pocket_vars[1].set(False)
+        app._on_pocket_toggle(1)
+        self.assertEqual(app.cf.inventory_rows, 5)
+        self.assertTrue(app.pocket_vars[1].get())
+        self.assertTrue(any(t == "Cannot change that" for t, _ in self.dialogs))
+        # spinbox to 7, then undo back to 5
+        app.rows_var.set("7")
+        app._on_rows_spin()
+        self.assertEqual((app.cf.inventory_rows, app.rows_shown), (7, 7))
+        app.undo()
+        self.assertEqual((app.cf.inventory_rows, app.rows_shown, app.rows_var.get()), (5, 5, "5"))
+        self.assertTrue(app.pocket_vars[1].get())
+
+    def test_opens_a_five_row_character(self):
+        items = [fch.Item.new(itemdb.ITEM_NAME_TO_HASH["Coins"], 6, 4, stack=10)]
+        path = os.path.join(self.tmp.name, "Five.fch")
+        with open(path, "wb") as f:
+            f.write(build_synthetic(items=items, uniques=["invrows 5", "invslot1"]))
+        app = self.app
+        app.open_file(path)
+        self.assertEqual(app.rows_shown, 5)
+        self.assertTrue(app.pocket_vars[1].get())
+        self.assertFalse(app.pocket_vars[2].get())
+        self.assertIn("Coins", app.cells[(6, 4)].cget("text"))
+        self.assertIn("(5 rows)", app.info_vars["items"].get())
+        for tab in (app.tab_char, app.tab_inv):
+            app.nb.select(tab)
+            self.root.update_idletasks()
+            w, h = self.root.minsize()
+            self.assertLessEqual(self.root.winfo_reqwidth(), w)
+            self.assertLessEqual(self.root.winfo_reqheight(), h)
+
     def test_nothing_to_save_is_not_written(self):
         app = self.app
         app.open_file(self.path)

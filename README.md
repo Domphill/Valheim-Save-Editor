@@ -13,6 +13,9 @@ What it edits:
   durability, change those on an existing item, or remove one. Added items can carry your
   character's name as the crafter, the same as gear you crafted yourself, or no crafter at
   all, the same as raw materials.
+- **Inventory size**: the number of rows (4 to the game's limit of 9) and Haldor's two pocket
+  upgrades, *Wider Pockets* and *Deeper Pockets*, which each add a row. Ticking one adds its row
+  and marks it as bought, exactly as buying it from Haldor does.
 - **Skills**: level of every skill, add or remove skills.
 - **Worlds**: the per-world data the character carries. Forget a world (fresh map and start
   position on the next login there), clear only the explored map, or clear the death marker.
@@ -66,9 +69,9 @@ launch. If Steam shows a cloud conflict dialog, keep the **local** file.
 1. Close Valheim completely.
 2. *Found characters* → pick your character, or *Open…* (the game's own previous save,
    the `.old` file, can be opened too).
-3. Character tab: untick the cheat flag. Inventory tab: red tiles are marked; *Clear all
-   marks*. Click an item to change its stack, quality or durability, then *Apply to
-   selected*. Click an empty slot, type in the search box and pick from the list to add an
+3. Character tab: untick the cheat flag; set the inventory rows or tick a pocket upgrade.
+   Inventory tab: red tiles are marked; *Clear all marks*. Click an item to change its
+   stack, quality or durability, then *Apply to selected*. Click an empty slot, type in the search box and pick from the list to add an
    item. In-game names work ("iron sword", "scrap iron", "corewood", "megingjord") in any
    word order, as do prefab names, and the dropdown next to the search box narrows the list
    to a category. Skills tab: type levels.
@@ -99,9 +102,12 @@ For machines without a desktop, or for scripting. Same backup and verification a
     python -m vse add   Character.fch IronScrap --slot 6,1 --stack 30 --no-crafter
     python -m vse worlds Character.fch
     python -m vse forget Character.fch 5227202803 [--map-only | --death-only]
+    python -m vse rows   Character.fch                 # show rows and pocket upgrades
+    python -m vse rows   Character.fch --wider         # buy Wider Pockets: one more row
+    python -m vse rows   Character.fch 6               # set the row count directly
 
-Slots are `column,row`, columns 0 to 7, rows 0 to 3, row 0 being the hotbar. World IDs come
-from the `worlds` command.
+Slots are `column,row`, columns 0 to 7, row 0 being the hotbar and the last row one less
+than the character's row count. World IDs come from the `worlds` command.
 
 ## Things to know
 
@@ -116,6 +122,11 @@ from the `worlds` command.
 - Durability is stored as a number the game shows divided by 100. The tool shows the
   game's number and fills in the item's maximum for the chosen quality when you add gear.
 - Stack sizes and quality levels are limited to what the game allows for that item.
+- **Inventory rows** are a player key, `invrows N`, that the game applies every time the
+  character spawns; Haldor's pocket upgrades add their own key (`invslot1`, `invslot2`) and
+  raise the count by one. Nothing else in the file records the size, so a character whose
+  rows are cut with items still in them would have those items dropped on the ground by the
+  game. The tool refuses that instead.
 - Item names, types, stack limits and durability values are read from the game's own files
   by `tools/generate_itemdata.py` and shipped as `vse/itemdata.py`. After a game update
   that adds items, rerun the generator (needs `pip install UnityPy` and an installed copy
