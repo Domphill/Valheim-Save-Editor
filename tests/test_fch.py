@@ -28,8 +28,10 @@ def make_world(uid, map_bytes=b"", death=False, logout=(10.0, 30.0, -20.0)):
 
 
 def build_synthetic(name="Tester", player_id=1234567890, used_cheats=0, items=(), skills=(), has_data=True,
-                    worlds=(), uniques=()):
+                    worlds=(), uniques=(), known_recipes=(), known_materials=(), trophies=(), biomes=()):
     """Build a minimal but structurally complete 1.0 profile the parser accepts."""
+    def slist(vals):
+        return struct.pack("<i", len(vals)) + b"".join(fch.write_str(v) for v in vals)
     def i32(v): return struct.pack("<i", v)
     def f32(v): return struct.pack("<f", v)
     def i64(v): return struct.pack("<q", v)
@@ -43,9 +45,9 @@ def build_synthetic(name="Tester", player_id=1234567890, used_cheats=0, items=()
         blob = i32(fch.PLAYERDATA_VERSION) + f32(25) + f32(25) + f32(50) + f32(0)
         blob += fch.write_str("") + f32(0) + i32(0)
         blob += struct.pack("<H", len(items)) + b"".join(it.to_bytes() for it in items)
-        blob += i32(0) * 4                                                      # recipes, stations, materials, tutorials
-        blob += i32(len(uniques)) + b"".join(fch.write_str(u) for u in uniques)  # uniques (player keys)
-        blob += i32(0) * 3                                                      # trophies, biomes, texts
+        blob += slist(known_recipes) + i32(0) + slist(known_materials) + i32(0)  # recipes, stations, materials, tutorials
+        blob += slist(uniques)                                                   # uniques (player keys)
+        blob += slist(trophies) + slist(biomes) + i32(0)                         # trophies, biomes, texts
         blob += fch.write_str("") + fch.write_str("") + b"\0" * 24 + i32(0) + i32(0)  # beard, hair, colours, model, foods
         blob += i32(fch.SKILLS_VERSION) + i32(len(skills)) + b"".join(s.to_bytes() for s in skills)
         blob += i32(0) + f32(50) + f32(0) + f32(0) + i32(0)

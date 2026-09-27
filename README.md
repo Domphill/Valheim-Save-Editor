@@ -21,6 +21,10 @@ What it edits:
 - **Skills**: level of every skill, add or remove skills.
 - **Worlds**: the per-world data the character carries. Forget a world (fresh map and start
   position on the next login there), clear only the explored map, or clear the death marker.
+- **Guide** (read only): for each biome, the boss, the stations to build, the gear, the foods
+  with their values, the meads and the materials to look for, with recipes and costs read from
+  the game files, ticked against what the open character has in its inventory, has the recipe
+  for, or has picked up before.
 
 What it does not touch: worlds, other players, servers, anything while the game is running.
 Steam version only; the Xbox/Game Pass build stores characters in a container this tool
@@ -93,6 +97,8 @@ reporting a problem.
 
 ![Worlds tab](docs/worlds.png)
 
+![Guide tab](docs/guide.png)
+
 ## Command line
 
 For machines without a desktop, or for scripting. Same backup and verification as the GUI.
@@ -134,7 +140,10 @@ than the character's row count. World IDs come from the `worlds` command.
 - Item names, types, stack limits and durability values are read from the game's own files
   by `tools/generate_itemdata.py` and shipped as `vse/itemdata.py`. After a game update
   that adds items, rerun the generator (needs `pip install UnityPy` and an installed copy
-  of the game) and open a pull request with the new table.
+  of the game) and open a pull request with the new table. The Guide's recipes, food values
+  and station costs come the same way from `tools/generate_guidedata.py` into
+  `vse/guidedata.py`; which biome a raw material belongs to, and the notes, are written by
+  hand in `vse/guide.py` (the tests flag any new material the game adds that has no biome).
 
 Verified with Valheim 1.0 (character profile version 46, player data version 33). The
 tool refuses any other version rather than guess.

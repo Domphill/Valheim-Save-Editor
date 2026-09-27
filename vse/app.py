@@ -7,7 +7,7 @@ import tkinter as tk
 import traceback
 from tkinter import filedialog, messagebox, ttk
 
-from . import __version__, core, fch, icon, paths, search
+from . import __version__, core, fch, guide, icon, paths, search
 
 APP_TITLE = "Valheim Save Editor"
 PAD = {"padx": 6, "pady": 3}
@@ -128,14 +128,17 @@ class App:
         self.tab_inv = ttk.Frame(nb)
         self.tab_skills = ttk.Frame(nb)
         self.tab_worlds = ttk.Frame(nb)
+        self.tab_guide = ttk.Frame(nb)
         nb.add(self.tab_char, text="Character")
         nb.add(self.tab_inv, text="Inventory")
         nb.add(self.tab_skills, text="Skills")
         nb.add(self.tab_worlds, text="Worlds")
+        nb.add(self.tab_guide, text="Guide")
         self._build_char()
         self._build_inv()
         self._build_skills()
         self._build_worlds()
+        self._build_guide()
 
     def _build_char(self):
         f = self.tab_char
@@ -368,6 +371,67 @@ class App:
                           "you press Save.",
                   style="Hint.TLabel", wraplength="705p", justify="left").pack(anchor="w", padx=8, pady=(2, 8))
 
+    def _build_guide(self):
+        f = self.tab_guide
+        top = ttk.Frame(f)
+        top.pack(fill="x", padx=8, pady=(8, 2))
+        ttk.Label(top, text="Biome:").pack(side="left")
+        self.guide_biome = ttk.Combobox(top, state="readonly", width=14, values=[b.name for b in guide.BIOMES])
+        self.guide_biome.current(0)
+        self.guide_biome.pack(side="left", padx=(4, 12))
+        self.guide_biome.bind("<<ComboboxSelected>>", lambda e: self._refresh_guide())
+        self.guide_hide = tk.BooleanVar(value=False)
+        ttk.Checkbutton(top, text="Hide what is already in the inventory", variable=self.guide_hide,
+                        command=self._refresh_guide).pack(side="left")
+        self.guide_progress = ttk.Label(top, text="", style="Muted.TLabel")
+        self.guide_progress.pack(side="right")
+        self.guide_notes = ttk.Label(f, text="", style="Hint.TLabel", wraplength="705p", justify="left")
+        self.guide_notes.pack(anchor="w", padx=8, pady=(2, 4))
+        body = ttk.Frame(f)
+        body.pack(fill="both", expand=True, padx=8, pady=(0, 4))
+        tree = ttk.Treeview(body, columns=("status", "detail"), show="tree headings", height=14, selectmode="browse")
+        tree.heading("#0", text="Item")
+        tree.column("#0", width=250, stretch=False)
+        tree.heading("status", text="You")
+        tree.column("status", width=80, anchor="center", stretch=False)
+        tree.heading("detail", text="Made from, found where, or what it gives")
+        tree.column("detail", width=540, stretch=True)
+        vsb = ttk.Scrollbar(body, orient="vertical", command=tree.yview)
+        tree.configure(yscrollcommand=vsb.set)
+        vsb.pack(side="right", fill="y")
+        tree.pack(side="left", fill="both", expand=True)
+        tree.tag_configure("section", font=self.bold)
+        tree.tag_configure("have", foreground="#1b7f3b")
+        self.guide_tree = tree
+        ttk.Label(f, text="Recipes, food values and station costs are read from the game files; the biome split and "
+                          "the notes are written by hand. 'in bag' is in the inventory now, 'can craft' means the "
+                          "recipe is unlocked, 'seen' means the material has been picked up before.",
+                  style="Hint.TLabel", wraplength="705p", justify="left").pack(anchor="w", padx=8, pady=(0, 6))
+        self._refresh_guide()
+
+    def _refresh_guide(self):
+        tree = self.guide_tree
+        tree.delete(*tree.get_children())
+        biome = guide.BIOMES[max(0, self.guide_biome.current())]
+        self.guide_notes.configure(text=biome.notes)
+        hide = self.guide_hide.get()
+        have = total = 0
+        for title, rows in guide.sections(biome, self.cf):
+            if not rows:
+                continue
+            parent = tree.insert("", "end", text=title, open=True, tags=("section",))
+            for label, st, detail in rows:
+                total += 1
+                done = st in ("in bag", "done")
+                have += done
+                if hide and st == "in bag":
+                    continue
+                tree.insert(parent, "end", text=label, values=(st, detail), tags=("have",) if done else ())
+        if self.cf and self.cf.has_data:
+            self.guide_progress.configure(text="%d of %d in hand" % (have, total))
+        else:
+            self.guide_progress.configure(text="Open a character to see what it has")
+
     def _refresh_worlds(self):
         tree = self.worlds_tree
         keep = tree.selection()
@@ -594,6 +658,8 @@ class App:
         self._refresh_inventory()
         self._rebuild_skill_rows()
         self._refresh_worlds()
+        self.guide_biome.current(guide.furthest_biome(cf))
+        self._refresh_guide()
 
     def _refresh_checks(self):
         cf = self.cf

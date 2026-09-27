@@ -46,9 +46,12 @@ def capture(hwnd, path):
     gdi32.DeleteObject(bmp)
     gdi32.DeleteDC(mem)
     user32.ReleaseDC(hwnd, hdc)
-    vis = wintypes.RECT()  # crop the invisible DWM borders away
-    if dwm.DwmGetWindowAttribute(hwnd, 9, ctypes.byref(vis), ctypes.sizeof(vis)) == 0:
+    vis = wintypes.RECT()  # crop the invisible DWM borders away (not reported while a game runs fullscreen)
+    if (dwm.DwmGetWindowAttribute(hwnd, 9, ctypes.byref(vis), ctypes.sizeof(vis)) == 0
+            and vis.right > vis.left and vis.bottom > vis.top):
         img = img.crop((vis.left - rect.left, vis.top - rect.top, vis.right - rect.left, vis.bottom - rect.top))
+    if not ok or img.getbbox() is None:
+        sys.exit("PrintWindow returned nothing for %s; close fullscreen games and retry" % os.path.basename(path))
     img.save(path)
     print("%s  %dx%d  printwindow=%d" % (os.path.basename(path), img.width, img.height, ok))
 
@@ -64,7 +67,8 @@ def main():
     root.update()
     hwnd = user32.GetParent(root.winfo_id())
     for name, tab, slot in (("character", app.tab_char, None), ("inventory", app.tab_inv, (0, 0)),
-                            ("skills", app.tab_skills, None), ("worlds", app.tab_worlds, None)):
+                            ("skills", app.tab_skills, None), ("worlds", app.tab_worlds, None),
+                            ("guide", app.tab_guide, None)):
         app.nb.select(tab)
         if slot:
             app.select(*slot)

@@ -335,6 +335,12 @@ class CharacterFile:
         self.skills = []
         self.uniques = []
         self.worlds = []
+        self.known_recipes = []
+        self.known_stations = {}
+        self.known_materials = []
+        self.shown_tutorials = []
+        self.trophies = []
+        self.known_biomes = []
         self.has_data = False
         self.max_health = self.health = self.max_stamina = 0.0
         self.guardian_power = ""
@@ -428,19 +434,19 @@ class CharacterFile:
         n = r.u16()
         self.items = [Item.parse(r) for _ in range(n)]
         mid_start = r.o
-        for _ in range(r.i32()):        # known recipes
-            r.string()
-        for _ in range(r.i32()):        # known crafting stations and their levels
-            r.string(); r.i32()
-        for _ in range(2):              # known materials, shown tutorials
-            for _ in range(r.i32()):
-                r.string()
+        # The known lists are read for display (the Guide tab) but written back from the raw bytes.
+        self.known_recipes = [r.string() for _ in range(r.i32())]
+        self.known_stations = {}
+        for _ in range(r.i32()):        # crafting stations seen, with their highest level
+            name = r.string()
+            self.known_stations[name] = r.i32()
+        self.known_materials = [r.string() for _ in range(r.i32())]
+        self.shown_tutorials = [r.string() for _ in range(r.i32())]
         uniq_off = r.o
         self.uniques = [r.string() for _ in range(r.i32())]
         uniq_end = r.o
-        for _ in range(2):              # trophies, known biomes
-            for _ in range(r.i32()):
-                r.string()
+        self.trophies = [r.string() for _ in range(r.i32())]
+        self.known_biomes = [r.string() for _ in range(r.i32())]
         for _ in range(r.i32()):        # known texts
             r.string(); r.string()
         r.string(); r.string()          # beard, hair

@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.0 – 2026-09-27
+
+- Guide tab: for each biome from the Meadows to the Deep North, the boss and its offering,
+  the stations and base pieces with their build costs, every weapon, shield, piece of armor,
+  accessory and ammo with its recipe and station, every food with its health, stamina, eitr
+  and duration, the meads, and the raw materials to look for (marked when they cannot go
+  through a portal). Each row is ticked against the open character: *in bag*, *can craft*
+  (recipe unlocked), *seen* (material picked up before), boss *done* (trophy or power). The
+  tab opens on the furthest biome the character has visited; a box hides what is already
+  in the inventory. Recipes, food values and costs are read from the game files by
+  `tools/generate_guidedata.py` into `vse/guidedata.py`; the biome split and the notes are
+  hand-written in `vse/guide.py`.
+- The character's known recipes, crafting stations, materials, tutorials, trophies and
+  biomes are now parsed (read only; they are written back unchanged).
+
 ## 0.7.0 – 2026-09-27
 
 - *Refill food & ammo* tops every food, mead, arrow and bolt stack up to the game's stack

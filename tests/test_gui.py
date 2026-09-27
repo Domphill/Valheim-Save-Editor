@@ -256,6 +256,37 @@ class GuiTests(unittest.TestCase):
         self.assertEqual((app.by_slot[(0, 0)].stack, app.by_slot[(1, 0)].stack), (7, 7))
         self.assertFalse(app.dirty)
 
+    def test_guide_tab(self):
+        from vse import guide
+        app = self.app
+        app.nb.select(app.tab_guide)
+        self.assertTrue(app.guide_tree.get_children(), "the guide shows without a file open")
+        self.assertIn("Open a character", app.guide_progress.cget("text"))
+        items = [fch.Item.new(itemdb.ITEM_NAME_TO_HASH["ArrowIron"], 0, 0, stack=20)]
+        path = os.path.join(self.tmp.name, "Guide.fch")
+        with open(path, "wb") as f:
+            f.write(build_synthetic(items=items, biomes=["Meadows", "Black Forest", "Swamp"]))
+        app.open_file(path)
+        self.assertEqual(app.guide_biome.get(), "Swamp", "opens on the furthest biome visited")
+        sections = {app.guide_tree.item(i)["text"]: i for i in app.guide_tree.get_children()}
+        ammo = [app.guide_tree.item(c) for c in app.guide_tree.get_children(sections["Ammo"])]
+        arrow = [r for r in ammo if r["text"] == "Ironhead Arrow"][0]
+        self.assertEqual(arrow["values"][0], "in bag")
+        self.assertIn("1 of", app.guide_progress.cget("text"))
+        app.guide_hide.set(True)
+        app._refresh_guide()
+        sections = {app.guide_tree.item(i)["text"]: i for i in app.guide_tree.get_children()}
+        ammo = [app.guide_tree.item(c)["text"] for c in app.guide_tree.get_children(sections["Ammo"])]
+        self.assertNotIn("Ironhead Arrow", ammo)
+        for i, b in enumerate(guide.BIOMES):
+            app.guide_biome.current(i)
+            app._refresh_guide()
+            self.assertEqual(app.guide_notes.cget("text"), b.notes)
+        self.root.update_idletasks()
+        w, h = self.root.minsize()
+        self.assertLessEqual(self.root.winfo_reqwidth(), w)
+        self.assertLessEqual(self.root.winfo_reqheight(), h)
+
     def test_nothing_to_save_is_not_written(self):
         app = self.app
         app.open_file(self.path)
