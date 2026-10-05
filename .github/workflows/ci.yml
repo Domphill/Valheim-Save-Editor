@@ -43,19 +43,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # all tags, to find the previous release
       - uses: actions/download-artifact@v4
         with:
           name: ValheimSaveEditor-windows
           path: dist
       - name: Checksum and release notes
+        # The notes cover every CHANGELOG section newer than the previous release tag, so
+        # several versions pushed together all appear in the one release.
         run: |
           (cd dist && sha256sum ValheimSaveEditor.exe > ValheimSaveEditor.exe.sha256 && cat ValheimSaveEditor.exe.sha256)
           python3 - <<'EOF'
-          import os, re
-          version = os.environ["GITHUB_REF_NAME"].lstrip("v")
+          import os, re, subprocess
+          def ver(s):
+              return tuple(int(p) for p in re.findall(r"\d+", s)[:3])
+          current = ver(os.environ["GITHUB_REF_NAME"])
+          tags = [ver(t) for t in subprocess.run(["git", "tag", "--list", "v*"], capture_output=True, text=True).stdout.split()]
+          older = [t for t in tags if t < current]
+          previous = max(older) if older else (0, 0, 0)
           text = open("CHANGELOG.md", encoding="utf-8").read()
-          m = re.search(r"^## %s\b[^\n]*\n(.*?)(?=^## |\Z)" % re.escape(version), text, re.S | re.M)
-          body = m.group(1).strip() if m else "See CHANGELOG.md."
+          parts = []
+          for m in re.finditer(r"^## (\d+\.\d+\.\d+)\b([^\n]*)\n(.*?)(?=^## |\Z)", text, re.S | re.M):
+              v = ver(m.group(1))
+              if previous < v <= current:
+                  parts.append("### %s%s\n\n%s" % (m.group(1), m.group(2), m.group(3).strip()))
+          body = "\n\n".join(parts) if parts else "See CHANGELOG.md."
           body += ("\n\n`ValheimSaveEditor.exe.sha256` is the SHA-256 of the exe, which was built by this "
                    "repository's CI from the tagged source. Windows SmartScreen warns about any unsigned "
                    "download; running from source needs only Python with tkinter.")
